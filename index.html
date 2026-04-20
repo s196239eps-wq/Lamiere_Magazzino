@@ -532,7 +532,7 @@ function showLogin(){
   document.getElementById('app').innerHTML=`
     <div class="login-screen">
       <div class="login-logo">METALTRACK</div>
-      <div class="login-sub">WASTE MANAGER v4.3</div>
+      <div class="login-sub">WASTE MANAGER v4.3.1</div>
       <div class="login-card">
         <div class="login-title">🔒 INSERISCI PIN</div>
         <div class="pin-dots" id="login-dots">
@@ -613,7 +613,7 @@ function load(){
         if(!localStorage.getItem(keys[i]))localStorage.setItem(keys[i],v);
       }
     });
-    // Migrazione v4.3: ricalcolo psot con logica uniforme
+    // Migrazione v4.3.1: ricalcolo psot con logica uniforme
     // Vecchio: psot = sfu ? pp : pp+psf   -->   Nuovo: psot = (sfu && psf>0) ? max(0,pp-psf) : pp
     // Flag persistente per non ripetere la migrazione
     if(!localStorage.getItem('st4_mig43')){
@@ -626,7 +626,7 @@ function load(){
       localStorage.setItem('st4_mig43','1');
       if(migrated>0){
         localStorage.setItem('st4l',JSON.stringify(lav));
-        console.log(`[v4.3] Migrate ${migrated} lavorazioni: psot ricalcolato con nuova logica.`);
+        console.log(`[v4.3.1] Migrate ${migrated} lavorazioni: psot ricalcolato con nuova logica.`);
       }
     }
   }catch(e){mag=[];lav=[];snaps=[];sfRiutil=[];storici=[];materiali=MATERIALI_STD.map(m=>({...m}));}
@@ -737,7 +737,7 @@ function render(){
   if(!appUnlocked){showLogin();return;}
   document.getElementById('app').innerHTML=`
     <nav class="nav">
-      <div class="nav-brand">METALTRACK <span>/ v4.3</span></div>
+      <div class="nav-brand">METALTRACK <span>/ v4.3.1</span></div>
       <div class="nav-tabs">
         ${TB('dashboard','📊 Dashboard')}${TB('magazzino','📦 Magazzino')}${TB('sfridi','♻️ Sfridi')}${TB('lavorazione','⚙️ Lavorazione')}${TB('commesse','📋 Commesse')}${TB('storico','📅 Storico')}${TB('guida','📖 Guida')}
       </div>
@@ -749,7 +749,7 @@ function render(){
       ${TB('dashboard','📊 Dashboard')}${TB('magazzino','📦 Magazzino')}${TB('sfridi','♻️ Sfridi')}${TB('lavorazione','⚙️ Nuova Lavorazione')}${TB('commesse','📋 Commesse')}${TB('storico','📅 Storico')}${TB('guida','📖 Guida')}
     </div>
     <main class="main fade" id="pg"></main>
-    <footer class="footer">METALTRACK v4.3 — PWA · sync automatico Appwrite · protetto da PIN</footer>
+    <footer class="footer">METALTRACK v4.3.1 — PWA · sync automatico Appwrite · protetto da PIN</footer>
     ${S.modal?rMod():''}`;
   renderPage();
 }
@@ -1449,7 +1449,7 @@ window.lvP=function(){
   if(!d){if(pr)pr.innerHTML='';if(bt)bt.disabled=true;return;}
   const overweight=d.pp>d.sh._resDisp;
   bt.disabled=overweight;
-  // v4.3: costo cliente = peso lamiera tagliata × €/kg (sempre)
+  // v4.3.1: costo cliente = peso lamiera tagliata × €/kg (sempre)
   // Sottratto = pp se sfrido perso/assente, pp - psf se sfrido riutilizzabile (torna in magazzino come Sfridi ♻️)
   const costoCliente = d.pp * d.sh.ckg;
   const margineSfridoMsg = (d.hsf && d.sfu && d.psf>0) ? `<div class="rr"><span style="color:var(--blue)">Recupero in Sfridi ♻️</span><span style="color:var(--blue);font-weight:600">+${fmt(d.psf,3)} kg</span></div>` : '';
@@ -1521,12 +1521,25 @@ function gLD(){
     }
   }
   const sfu=hsf&&document.getElementById('ck_su')?.classList?.contains('on');
-  // LOGICA UNIFORME v4.3:
-  // Sottratto dalla lamiera origine = peso_lamiera_tagliata - sfrido_recuperato (se riutilizzabile)
-  //                                 = peso_lamiera_tagliata                       (se sfrido perso o assente)
-  // Il cliente paga sempre pp × €/kg (la lamiera intera che ha richiesto).
-  // Lo sfrido riutilizzabile resta disponibile in magazzino come entità Sfridi ♻️.
-  const psot = (hsf && sfu && psf>0) ? Math.max(0, pp - psf) : pp;
+  // LOGICA UNIFORME v4.3.1.1:
+  // La quantità effettivamente "prelevata" dalla sorgente (magazzino o sfrido) è sempre pp
+  // — perché pp è il peso materiale che esce dalla lamiera/sfrido origine per fare la
+  // lavorazione (include al suo interno il peso del pezzo prodotto + quello che diventa sfrido).
+  //
+  // Eccezione quando la SORGENTE è un materiale di MAGAZZINO (lamiera/tondo):
+  //   - se lo sfrido generato è RIUTILIZZABILE (torna in Sfridi ♻️): sottrazione netta = pp - psf
+  //     (perché psf entra come entità separata in Sfridi, quindi materiale "recuperato")
+  //   - se lo sfrido è PERSO o assente: sottrazione = pp (tutto il taglio esce dal magazzino)
+  //
+  // Quando la SORGENTE è uno SFRIDO riutilizzabile esistente:
+  //   - psot = pp sempre (altrimenti creeremmo materiale dal nulla duplicando l'entrata in Sfridi).
+  //     Lo sfrido generato sarà comunque registrato a parte (in Sfridi ♻️ se riutilizzabile).
+  let psot;
+  if(sh._isSf){
+    psot = pp;
+  } else {
+    psot = (hsf && sfu && psf>0) ? Math.max(0, pp - psf) : pp;
+  }
   return{sh,cl,co,a,b,sup,vol,pp,desc,hsf,psf,sfInfo,sfu,psot,spEff,sfForma};
 }
 
@@ -1561,21 +1574,39 @@ window.subLav=function(){
     });
   }
   recalc();
-  // Chiedi se flaggare la lamiera sorgente come Esaurita quando lo sfrido è PERSO
-  // e rimane ancora residuo disponibile nel magazzino (non ha senso se è uno sfrido ♻️ da sfrido).
+  // Chiedi se flaggare la sorgente come Esaurita quando lo sfrido generato è PERSO
+  // e rimane ancora residuo disponibile. Vale sia per lamiere/tondi del magazzino
+  // che per sfridi riutilizzabili di origine.
   let flagEsaurito=false;
-  if(d.hsf&&!d.sfu&&d.psf>0&&!d.sh._isSf){
-    const m=mag.find(x=>x.id===d.sh.id);
-    if(m&&!m.esa&&m.res>0.001){
-      flagEsaurito=confirm(
-        `Lo sfrido generato è stato segnato come NON riutilizzabile.\n\n`+
-        `Residuo rimanente su "${m.mat} ${m.col||''}": ${fmt(m.res,3)} kg.\n\n`+
-        `Vuoi segnare questa lamiera/tondo come ESAURITA?\n`+
-        `(non comparirà più nel menu delle lavorazioni successive)`
-      );
-      if(flagEsaurito){
-        m.esa=true;
-        if(!m.dataEsaurimento)m.dataEsaurimento=new Date().toLocaleDateString('it-IT');
+  if(d.hsf&&!d.sfu&&d.psf>0){
+    if(!d.sh._isSf){
+      // Sorgente = magazzino
+      const m=mag.find(x=>x.id===d.sh.id);
+      if(m&&!m.esa&&m.res>0.001){
+        flagEsaurito=confirm(
+          `Lo sfrido generato è stato segnato come NON riutilizzabile.\n\n`+
+          `Residuo rimanente su "${m.mat} ${m.col||''}": ${fmt(m.res,3)} kg.\n\n`+
+          `Vuoi segnare questa lamiera/tondo come ESAURITA?\n`+
+          `(non comparirà più nel menu delle lavorazioni successive)`
+        );
+        if(flagEsaurito){
+          m.esa=true;
+          if(!m.dataEsaurimento)m.dataEsaurimento=new Date().toLocaleDateString('it-IT');
+        }
+      }
+    } else {
+      // Sorgente = sfrido riutilizzabile
+      const sfSrc=sfRiutil.find(x=>x.id===d.sh._sfId);
+      if(sfSrc&&!sfSrc.usato&&sfSrc.peso>0.001){
+        flagEsaurito=confirm(
+          `Lo sfrido generato è stato segnato come NON riutilizzabile.\n\n`+
+          `Residuo rimanente sullo sfrido "${sfSrc.mat} ${sfSrc.desc||''}": ${fmt(sfSrc.peso,3)} kg.\n\n`+
+          `Vuoi segnare questo sfrido come ESAURITO?\n`+
+          `(non comparirà più nel menu delle lavorazioni successive)`
+        );
+        if(flagEsaurito){
+          sfSrc.usato=true;
+        }
       }
     }
   }
@@ -1593,7 +1624,7 @@ function rCom(){
     <thead><tr><th>Data</th><th>Cliente</th><th>Commessa</th><th>Materiale</th><th>Colata</th><th>Pezzo</th><th>Peso kg</th><th>Sfrido kg</th><th>Tipo sfrido</th><th>Sottratto</th><th>€/kg</th><th>Costo pezzo</th><th>Costo cliente</th><th>Margine sfrido</th><th></th></tr></thead>
     <tbody>${r.map(l=>{
       const ri=lav.findIndex(x=>x.id===l.id);
-      // LOGICA v4.3: il cliente paga sempre la lamiera intera tagliata (pp × €/kg)
+      // LOGICA v4.3.1: il cliente paga sempre la lamiera intera tagliata (pp × €/kg)
       const costoCliente=+((l.pp||0)*(l.ckg||0)).toFixed(2);
       const margineSfrido=l.sfu&&l.psf>0?+((l.psf||0)*(l.ckg||0)).toFixed(2):0;
       return`<tr>
@@ -1815,7 +1846,7 @@ window.delStorico=function(id){
 // ═══ GUIDA ═══
 function rGuida(){
   return`<div class="card">
-    <div class="g-h1">📖 Guida MetalTrack v4.3</div>
+    <div class="g-h1">📖 Guida MetalTrack v4.3.1</div>
     <p class="g-p">MetalTrack è un gestionale per il monitoraggio di lamiere, tondi, sfridi e lavorazioni. I dati sono salvati <strong>sia in locale</strong> (browser) <strong>sia su database cloud</strong> (Appwrite). Il sync avviene automaticamente.</p>
     <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">
       <button class="btn btn-p" onclick="pdfGuida()">📄 Scarica Guida PDF</button>
@@ -1844,7 +1875,7 @@ function rGuida(){
     </div>
 
     <div class="g-section">
-      <div class="g-h2">🧪 Elenco Materiali (Nuovo v4.3)</div>
+      <div class="g-h2">🧪 Elenco Materiali (Nuovo v4.3.1)</div>
       <p class="g-p">L'app gestisce un <strong>elenco di materiali con densità preimpostate</strong>. Quando aggiungi una lamiera o un tondo, lo selezioni da questa lista: il nome e la densità vengono compilati automaticamente.</p>
       <div class="g-kv"><span>Materiali standard</span><span>Acciaio, Alluminio, Rame, Ottone, Titanio, Ghisa (precaricati)</span></div>
       <div class="g-kv"><span>Aggiungere materiale</span><span>Dropdown → "⚙️ Gestisci elenco materiali…"</span></div>
@@ -1871,11 +1902,11 @@ function rGuida(){
       <div class="g-note">ℹ️ Gli sfridi Riutilizzabili compaiono nel selettore materiali della sezione Lavorazione e possono essere usati come sorgente per nuovi pezzi.</div>
     </div>
     <div class="g-section">
-      <div class="g-h2">🗑 Sfridi Persi (Aggiornato v4.3)</div>
+      <div class="g-h2">🗑 Sfridi Persi (Aggiornato v4.3.1)</div>
       <p class="g-p">Gli sfridi non riutilizzabili sono materiale scartato. Puoi aggiungerli in due modi:</p>
       <div class="g-step"><div class="g-num">1</div><div class="g-step-txt">Durante una <strong>lavorazione</strong>: scegli sfrido "Perso" — viene scalato automaticamente</div></div>
       <div class="g-step"><div class="g-num">2</div><div class="g-step-txt"><strong>Manualmente</strong> in kg: pulsante "+ Aggiungi Sfrido Perso" nella sezione Sfridi</div></div>
-      <div class="g-warn">⚠️ <strong>Novità v4.3:</strong> lo sfrido perso manuale ora richiede OBBLIGATORIAMENTE la selezione della lamiera/tondo sorgente e viene scalato dal residuo. Se il materiale sorgente si esaurisce, sparisce automaticamente dal selettore delle lavorazioni.</div>
+      <div class="g-warn">⚠️ <strong>Novità v4.3.1:</strong> lo sfrido perso manuale ora richiede OBBLIGATORIAMENTE la selezione della lamiera/tondo sorgente e viene scalato dal residuo. Se il materiale sorgente si esaurisce, sparisce automaticamente dal selettore delle lavorazioni.</div>
       <div class="g-tip">💡 Entrambi i tipi compaiono nella sezione <strong>Sfridi Persi</strong> con un badge che indica l'origine (Manuale/Lavorazione). Gli sfridi persi manuali sono eliminabili con PIN e ripristinano il residuo del magazzino.</div>
     </div>
     <div class="g-section">
@@ -2288,7 +2319,7 @@ window.pBolla=async function(id){
     y=doc.lastAutoTable.finalY+12;if(y>260)y=260;
     doc.setDrawColor(180);doc.line(M,y+15,M+60,y+15);doc.line(W-M-60,y+15,W-M,y+15);
     doc.setFontSize(8);doc.setTextColor(120);doc.text('Firma Operatore',M,y+20);doc.text('Firma Magazziniere',W-M-60,y+20);
-    doc.setFontSize(7);doc.setTextColor(160);doc.text('Generato da MetalTrack v4.3',W/2,285,{align:'center'});
+    doc.setFontSize(7);doc.setTextColor(160);doc.text('Generato da MetalTrack v4.3.1',W/2,285,{align:'center'});
     doc.save('Bolla_'+String(l.com)+'_'+String(l.date).replace(/[\/\\ :]/g,'-')+'.pdf');
   }catch(e){alert('Errore PDF: '+e.message);}
 }
@@ -2364,7 +2395,7 @@ window.pdfGuida=async function(){
     // Cover
     doc.setFillColor(12,15,20);doc.rect(0,0,W,60,'F');
     doc.setTextColor(249,115,22);doc.setFontSize(28);doc.setFont('helvetica','bold');doc.text('METALTRACK',M,30);
-    doc.setFontSize(12);doc.setTextColor(155,163,181);doc.text('Guida Utente - Waste Manager v4.3',M,42);
+    doc.setFontSize(12);doc.setTextColor(155,163,181);doc.text('Guida Utente - Waste Manager v4.3.1',M,42);
     doc.setFontSize(8);doc.setTextColor(107,115,133);doc.text('Generata il '+new Date().toLocaleDateString('it-IT'),M,54);
     y=75;
     const sections=[
@@ -2388,7 +2419,7 @@ window.pdfGuida=async function(){
         'Giallo fisso (IN CODA): il salvataggio e in attesa, verra completato appena possibile.',
         'Sync automatico: quando torni online, tutti i dati locali vengono inviati al cloud senza alcuna azione manuale.'
       ]},
-      {title:'4. Elenco Materiali (v4.3)',body:[
+      {title:'4. Elenco Materiali (v4.3.1)',body:[
         'L app gestisce un elenco di materiali con densita preimpostate. Quando aggiungi una lamiera o un tondo, lo selezioni da questa lista: il nome e la densita vengono compilati automaticamente.',
         'Materiali standard precaricati: Acciaio (7850), Alluminio (2700), Rame (8900), Ottone (8500), Titanio (4500), Ghisa (7200) kg/m3.',
         'Aggiungere materiali: dal dropdown "Materiale" scegli "Gestisci elenco materiali..." per aprire la tabella di gestione.',
@@ -2413,7 +2444,7 @@ window.pdfGuida=async function(){
         'b) Forma: Lamiera rettangolare (LxWxsp), Disco pieno (Destxsp), Anello (Dest/Dintxsp), Peso diretto (kg).',
         'Il peso viene calcolato automaticamente dalla forma. Gli sfridi disponibili appaiono nel selettore Lavorazione come opzione di materiale sorgente.'
       ]},
-      {title:'7. Sfridi Persi (v4.3)',body:[
+      {title:'7. Sfridi Persi (v4.3.1)',body:[
         'Sfridi non riutilizzabili, scartati. Si possono registrare in due modi:',
         '1) Durante una lavorazione: scegliendo opzione "Perso" - il peso viene scalato automaticamente dal magazzino sorgente.',
         '2) Manualmente: pulsante "+ Aggiungi Sfrido Perso". Richiede OBBLIGATORIAMENTE la scelta della lamiera/tondo sorgente e i kg di sfrido.',
@@ -2474,7 +2505,7 @@ window.pdfGuida=async function(){
     });
     doc.setFontSize(7);doc.setTextColor(160);
     for(let i=2;i<=doc.getNumberOfPages();i++){
-      doc.setPage(i);doc.text('MetalTrack v4.3 - Guida Utente',W/2,290,{align:'center'});
+      doc.setPage(i);doc.text('MetalTrack v4.3.1 - Guida Utente',W/2,290,{align:'center'});
       doc.text('Pag.'+(i-1)+'/'+(doc.getNumberOfPages()-1),W-M,290,{align:'right'});
     }
     doc.save('MetalTrack_Guida.pdf');
@@ -2487,7 +2518,7 @@ window.expCSV=function(){
   if(!lavReali.length)return;
   let c='Data,Cliente,Commessa,Materiale,Colata,Pezzo,Peso_pezzo_kg,Sfrido_kg,Tipo_sfrido,Sottratto_kg,EuroKg,Costo_EUR,Costo_cliente_EUR\n';
   lavReali.forEach(l=>{
-    // v4.3: costo cliente = peso lamiera tagliata × €/kg
+    // v4.3.1: costo cliente = peso lamiera tagliata × €/kg
     const cc=+((l.pp||0)*(l.ckg||0)).toFixed(2);
     c+=`${l.date},${l.cli},${l.com},${l.mat},${l.col||''},"${l.pdesc}",${fmt(l.pp,3)},${fmt(l.psf||0,3)},${l.sf?(l.sfu?'Riutilizzabile':'Perso'):'—'},${fmt(l.psot,3)},${fmt(l.ckg,2)},${fmt(l.ctot,2)},${fmt(cc,2)}\n`;
   });
