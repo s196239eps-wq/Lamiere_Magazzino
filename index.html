@@ -532,7 +532,7 @@ function showLogin(){
   document.getElementById('app').innerHTML=`
     <div class="login-screen">
       <div class="login-logo">METALTRACK</div>
-      <div class="login-sub">WASTE MANAGER v4.2</div>
+      <div class="login-sub">WASTE MANAGER v4.3</div>
       <div class="login-card">
         <div class="login-title">🔒 INSERISCI PIN</div>
         <div class="pin-dots" id="login-dots">
@@ -613,6 +613,22 @@ function load(){
         if(!localStorage.getItem(keys[i]))localStorage.setItem(keys[i],v);
       }
     });
+    // Migrazione v4.3: ricalcolo psot con logica uniforme
+    // Vecchio: psot = sfu ? pp : pp+psf   -->   Nuovo: psot = (sfu && psf>0) ? max(0,pp-psf) : pp
+    // Flag persistente per non ripetere la migrazione
+    if(!localStorage.getItem('st4_mig43')){
+      let migrated=0;
+      lav.forEach(l=>{
+        if(l._sfPersoManuale)return; // sfridi persi manuali sono già corretti (psot = psf)
+        const newPsot = (l.sf && l.sfu && l.psf>0) ? Math.max(0,(l.pp||0)-(l.psf||0)) : (l.pp||0);
+        if(Math.abs((l.psot||0)-newPsot)>0.001){ l.psot=+newPsot.toFixed(3); migrated++; }
+      });
+      localStorage.setItem('st4_mig43','1');
+      if(migrated>0){
+        localStorage.setItem('st4l',JSON.stringify(lav));
+        console.log(`[v4.3] Migrate ${migrated} lavorazioni: psot ricalcolato con nuova logica.`);
+      }
+    }
   }catch(e){mag=[];lav=[];snaps=[];sfRiutil=[];storici=[];materiali=MATERIALI_STD.map(m=>({...m}));}
 }
 function save(){
@@ -721,7 +737,7 @@ function render(){
   if(!appUnlocked){showLogin();return;}
   document.getElementById('app').innerHTML=`
     <nav class="nav">
-      <div class="nav-brand">METALTRACK <span>/ v4.2</span></div>
+      <div class="nav-brand">METALTRACK <span>/ v4.3</span></div>
       <div class="nav-tabs">
         ${TB('dashboard','📊 Dashboard')}${TB('magazzino','📦 Magazzino')}${TB('sfridi','♻️ Sfridi')}${TB('lavorazione','⚙️ Lavorazione')}${TB('commesse','📋 Commesse')}${TB('storico','📅 Storico')}${TB('guida','📖 Guida')}
       </div>
@@ -733,7 +749,7 @@ function render(){
       ${TB('dashboard','📊 Dashboard')}${TB('magazzino','📦 Magazzino')}${TB('sfridi','♻️ Sfridi')}${TB('lavorazione','⚙️ Nuova Lavorazione')}${TB('commesse','📋 Commesse')}${TB('storico','📅 Storico')}${TB('guida','📖 Guida')}
     </div>
     <main class="main fade" id="pg"></main>
-    <footer class="footer">METALTRACK v4.2 — PWA · sync automatico Appwrite · protetto da PIN</footer>
+    <footer class="footer">METALTRACK v4.3 — PWA · sync automatico Appwrite · protetto da PIN</footer>
     ${S.modal?rMod():''}`;
   renderPage();
 }
@@ -1306,27 +1322,51 @@ window.lvU=function(){
   const spInfo=sh._isSf&&sh.spessore?` | Spess: <strong>${sh.spessore}mm</strong>`:'';
   const info=sh._isSf?`Sfrido ♻️ — ${esc(sh._sfObj.desc||'')}`:
     (sh.tipo==='lamiera'?`${sh.dim.l}×${sh.dim.w}×${sh.dim.t}mm`:`Ø${sh.dim.de}×${sh.dim.lu}mm`);
-  
-  // FIX: dimensioni in griglia uniforme — tutte le celle nella stessa griglia
-  // Per lamiera: Lato1, Lato2, (Spessore se sfrido)
-  // Per tondo: Lunghezza, (Spessore/Diametro se sfrido)
-  let dimFields='';
+
+  // Selettore geometria: solo per lamiere — rettangolare (default) o disco.
+  // Per tondi: sempre lunghezza del tondo.
+  const formaSel = sh.tipo==='lamiera' ? `
+    <div class="fi s2"><label class="fl">Forma del taglio</label>
+      <select class="fx" id="lv_forma" onchange="lvUForma()">
+        <option value="rett" selected>Rettangolo (L × W)</option>
+        <option value="disco">Disco (Ø esterno)</option>
+      </select>
+    </div>` : '';
+
+  dd.innerHTML=`<div class="sinfo">${sh._isSf?'<span style="color:var(--blue);font-weight:700">♻️ SFRIDO</span> — ':''}<strong>${esc(sh.mat)}</strong> — ${info}${spInfo} | ρ${sh.dens} kg/m³ | Disp: <strong style="color:var(--green)">${fmt(sh._resDisp,3)} kg</strong></div>
+    <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Dimensioni lamiera da tagliare per il pezzo</div>
+    <div class="fg">${formaSel}</div>
+    <div class="fg" id="lv_dims"></div>
+    <div id="lvPI"></div>`;
+  // Popola i campi dimensione
+  lvUForma();
+}
+
+// Cambio forma taglio: rigenera gli input dimensione.
+window.lvUForma = function(){
+  const sh=lvGetSel();const dims=document.getElementById('lv_dims');
+  if(!sh||!dims)return;
+  const forma = sh.tipo==='lamiera' ? (document.getElementById('lv_forma')?.value || 'rett') : 'tondo';
   if(sh.tipo==='lamiera'){
-    dimFields=`
-      <div class="fi"><label class="fl">Lato 1 (mm)</label><input class="fx" id="lv_a" type="number" placeholder="lunghezza" oninput="lvC()"></div>
-      <div class="fi"><label class="fl">Lato 2 (mm)</label><input class="fx" id="lv_b" type="number" placeholder="larghezza" oninput="lvC()"></div>
-      ${sh._isSf?`<div class="fi"><label class="fl">Spessore mm${sh.spessore?' ('+sh.spessore+')':''}</label><input class="fx" id="lv_sp" type="number" value="${sh.spessore||''}" oninput="lvC()"></div>`:''}`;
-  }else{
-    dimFields=`
+    if(forma==='rett'){
+      dims.innerHTML = `
+        <div class="fi"><label class="fl">Lato 1 (mm)</label><input class="fx" id="lv_a" type="number" placeholder="lunghezza" oninput="lvC()"></div>
+        <div class="fi"><label class="fl">Lato 2 (mm)</label><input class="fx" id="lv_b" type="number" placeholder="larghezza" oninput="lvC()"></div>
+        ${sh._isSf?`<div class="fi"><label class="fl">Spessore mm${sh.spessore?' ('+sh.spessore+')':''}</label><input class="fx" id="lv_sp" type="number" value="${sh.spessore||''}" oninput="lvC()"></div>`:''}`;
+    } else {
+      // Disco
+      dims.innerHTML = `
+        <div class="fi"><label class="fl">Ø Esterno (mm)</label><input class="fx" id="lv_a" type="number" placeholder="es. 300" oninput="lvC()"></div>
+        ${sh._isSf?`<div class="fi"><label class="fl">Spessore mm${sh.spessore?' ('+sh.spessore+')':''}</label><input class="fx" id="lv_sp" type="number" value="${sh.spessore||''}" oninput="lvC()"></div>`:''}`;
+    }
+  } else {
+    // Tondo: una sola dimensione (lunghezza)
+    dims.innerHTML = `
       <div class="fi"><label class="fl">Lunghezza pezzo (mm)</label><input class="fx" id="lv_a" type="number" placeholder="lunghezza" oninput="lvC()"></div>
       ${sh._isSf?`<div class="fi"><label class="fl">Ø / Spessore mm${sh.spessore?' ('+sh.spessore+')':''}</label><input class="fx" id="lv_sp" type="number" value="${sh.spessore||''}" oninput="lvC()"></div>`:''}`;
   }
-
-  dd.innerHTML=`<div class="sinfo">${sh._isSf?'<span style="color:var(--blue);font-weight:700">♻️ SFRIDO</span> — ':''}<strong>${esc(sh.mat)}</strong> — ${info}${spInfo} | ρ${sh.dens} kg/m³ | Disp: <strong style="color:var(--green)">${fmt(sh._resDisp,3)} kg</strong></div>
-    <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Dimensioni pezzo da produrre</div>
-    <div class="fg">${dimFields}</div>
-    <div id="lvPI"></div>`;
-}
+  lvC();
+};
 
 window.lvC=function(){
   const sh=lvGetSel();if(!sh)return;
@@ -1335,10 +1375,17 @@ window.lvC=function(){
   const spEff=sh._isSf?(spInput||sh.spessore||1):(sh.tipo==='lamiera'?sh.dim.t:sh.dim.de);
   if(a<=0){$('#lvPI').innerHTML='';$('#lvS').style.display='none';$('#lvPr').innerHTML='';$('#lvB').disabled=true;return;}
   let sup,vol,peso,desc;
+  const formaLav = sh.tipo==='lamiera' ? (document.getElementById('lv_forma')?.value || 'rett') : 'tondo';
   if(sh.tipo==='lamiera'){
     const sp=spEff/1000;
-    if(b>0){sup=(a/1000)*(b/1000);desc=`${a}×${b}×${spEff}mm`;}
-    else{sup=(a/1000)*(a/1000);desc=`${a}×${a}×${spEff}mm`;}
+    if(formaLav==='disco'){
+      // Disco: a = Ø esterno. Area = π × (Ø/2)²
+      const r=(a/1000)/2;sup=Math.PI*r*r;desc=`Ø${a}×${spEff}mm`;
+    } else if(b>0){
+      sup=(a/1000)*(b/1000);desc=`${a}×${b}×${spEff}mm`;
+    } else {
+      sup=(a/1000)*(a/1000);desc=`${a}×${a}×${spEff}mm`;
+    }
     vol=sup*sp;
   }else{
     const r=(spEff/1000)/2;sup=Math.PI*r*r;vol=sup*(a/1000);desc=`Ø${spEff}×${a}mm`;
@@ -1352,7 +1399,7 @@ window.lvC=function(){
     const sfComp=sfRiutil.filter(s=>!s.usato&&s.tipo===sh.tipo&&s.peso>=peso&&s.mat===sh.mat);
     if(sfComp.length>0){const sf=sfComp.sort((a,z)=>a.peso-z.peso)[0];sfSuggestHtml=`<div style="background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.35);border-radius:8px;padding:12px;margin-top:8px;color:var(--blue)"><strong>💡 Usa uno sfrido esistente!</strong><br><span style="font-size:11px">${esc(sf.mat)} — ${esc(sf.desc||'')} (${fmt(sf.peso,3)} kg) — considera di usarlo per risparmiare materiale.</span></div>`;}
   }
-  $('#lvPI').innerHTML=`<div class="sinfo"><div class="sr"><span>Pezzo:</span><span>${desc}</span></div><div class="sr"><span>Sup:</span><span>${fmt(sup,4)} m²</span></div><div class="sr"><span>Vol:</span><span>${fmt(vol,6)} m³</span></div><div class="sr"><span><strong>Peso pezzo:</strong></span><span><strong style="color:var(--accent)">${fmt(peso,3)} kg</strong></span></div></div>${alertHtml}${sfSuggestHtml}`;
+  $('#lvPI').innerHTML=`<div class="sinfo"><div class="sr"><span>Lamiera tagliata:</span><span>${desc}</span></div><div class="sr"><span>Sup:</span><span>${fmt(sup,4)} m²</span></div><div class="sr"><span>Vol:</span><span>${fmt(vol,6)} m³</span></div><div class="sr"><span><strong>Peso lamiera tagliata:</strong></span><span><strong style="color:var(--accent)">${fmt(peso,3)} kg</strong></span></div></div>${alertHtml}${sfSuggestHtml}`;
   const sv=$('#lvS');sv.style.display='block';
   // Sfrido con forme: rettangolare / disco / anello
   sv.innerHTML=`<div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin:12px 0 8px">Sfrido generato</div>
@@ -1402,13 +1449,18 @@ window.lvP=function(){
   if(!d){if(pr)pr.innerHTML='';if(bt)bt.disabled=true;return;}
   const overweight=d.pp>d.sh._resDisp;
   bt.disabled=overweight;
+  // v4.3: costo cliente = peso lamiera tagliata × €/kg (sempre)
+  // Sottratto = pp se sfrido perso/assente, pp - psf se sfrido riutilizzabile (torna in magazzino come Sfridi ♻️)
+  const costoCliente = d.pp * d.sh.ckg;
+  const margineSfridoMsg = (d.hsf && d.sfu && d.psf>0) ? `<div class="rr"><span style="color:var(--blue)">Recupero in Sfridi ♻️</span><span style="color:var(--blue);font-weight:600">+${fmt(d.psf,3)} kg</span></div>` : '';
   pr.innerHTML=`<div class="rp" style="margin-bottom:0">
     <div style="font-size:10px;font-family:'Space Mono',monospace;text-transform:uppercase;letter-spacing:1.5px;color:var(--text3);margin-bottom:10px">Riepilogo</div>
-    <div class="rr"><span>Peso pezzo prodotto</span><span style="color:var(--accent)">${fmt(d.pp,3)} kg</span></div>
+    <div class="rr"><span>Peso lamiera tagliata</span><span style="color:var(--accent)">${fmt(d.pp,3)} kg</span></div>
     ${d.hsf?`<div class="rr"><span>Peso sfrido (${d.sfForma})</span><span>${fmt(d.psf,3)} kg — <span class="${d.sfu?'sf-used-badge':'sf-lost-badge'}">${d.sfu?'Riutilizzabile ✅':'Perso ❌'}</span></span></div>`:''}
+    ${margineSfridoMsg}
     <div class="rr"><span><strong>Sottratto da ${d.sh._isSf?'sfrido':'magazzino'}</strong></span><span><strong>${fmt(d.psot,3)} kg</strong></span></div>
     <div class="rr"><span>Residuo dopo</span><span style="color:${(d.sh._resDisp-d.psot)<0?'var(--red)':'inherit'}">${fmt(d.sh._resDisp-d.psot,3)} kg</span></div>
-    <div class="rr" style="background:var(--accent-bg);border-radius:6px;padding:8px"><span>Costo materiale (pezzo)</span><span style="color:var(--accent);font-weight:700">${fmtE(d.pp*d.sh.ckg)}</span></div>
+    <div class="rr" style="background:var(--accent-bg);border-radius:6px;padding:8px"><span><strong>Costo cliente</strong> (lamiera × €/kg)</span><span style="color:var(--accent);font-weight:700">${fmtE(costoCliente)}</span></div>
   </div>
   ${overweight?`<div style="background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.4);border-radius:8px;padding:10px;margin-top:8px;color:var(--red);font-size:12px"><strong>⚠️ Materiale insufficiente — impossibile registrare.</strong></div>`:''}`;
 }
@@ -1420,11 +1472,17 @@ function gLD(){
   const b=+(($('#lv_b')?.value)||0);
   const spInput=+(($('#lv_sp')?.value)||0);
   const spEff=sh._isSf?(spInput||sh.spessore||1):(sh.tipo==='lamiera'?sh.dim.t:sh.dim.de);
+  const formaLav = sh.tipo==='lamiera' ? (document.getElementById('lv_forma')?.value || 'rett') : 'tondo';
   let sup,vol,pp,desc;
   if(sh.tipo==='lamiera'){
     const sp=spEff/1000;
-    sup=b>0?(a/1000)*(b/1000):(a/1000)*(a/1000);vol=sup*sp;
-    desc=b>0?`${a}×${b}×${spEff}mm`:`${a}×${a}×${spEff}mm`;
+    if(formaLav==='disco'){
+      // Taglio circolare: a = Ø esterno
+      const r=(a/1000)/2;sup=Math.PI*r*r;vol=sup*sp;desc=`Ø${a}×${spEff}mm`;
+    } else {
+      sup=b>0?(a/1000)*(b/1000):(a/1000)*(a/1000);vol=sup*sp;
+      desc=b>0?`${a}×${b}×${spEff}mm`:`${a}×${a}×${spEff}mm`;
+    }
     pp=+(vol*(sh.dens||7850)).toFixed(3);
   }else{
     const r=(spEff/1000)/2;sup=Math.PI*r*r;vol=sup*(a/1000);desc=`Ø${spEff}×${a}mm`;
@@ -1463,7 +1521,12 @@ function gLD(){
     }
   }
   const sfu=hsf&&document.getElementById('ck_su')?.classList?.contains('on');
-  const psot=sfu?pp:(pp+psf);
+  // LOGICA UNIFORME v4.3:
+  // Sottratto dalla lamiera origine = peso_lamiera_tagliata - sfrido_recuperato (se riutilizzabile)
+  //                                 = peso_lamiera_tagliata                       (se sfrido perso o assente)
+  // Il cliente paga sempre pp × €/kg (la lamiera intera che ha richiesto).
+  // Lo sfrido riutilizzabile resta disponibile in magazzino come entità Sfridi ♻️.
+  const psot = (hsf && sfu && psf>0) ? Math.max(0, pp - psf) : pp;
   return{sh,cl,co,a,b,sup,vol,pp,desc,hsf,psf,sfInfo,sfu,psot,spEff,sfForma};
 }
 
@@ -1530,7 +1593,8 @@ function rCom(){
     <thead><tr><th>Data</th><th>Cliente</th><th>Commessa</th><th>Materiale</th><th>Colata</th><th>Pezzo</th><th>Peso kg</th><th>Sfrido kg</th><th>Tipo sfrido</th><th>Sottratto</th><th>€/kg</th><th>Costo pezzo</th><th>Costo cliente</th><th>Margine sfrido</th><th></th></tr></thead>
     <tbody>${r.map(l=>{
       const ri=lav.findIndex(x=>x.id===l.id);
-      const costoCliente=+((l.pp+(l.psf||0))*(l.ckg||0)).toFixed(2);
+      // LOGICA v4.3: il cliente paga sempre la lamiera intera tagliata (pp × €/kg)
+      const costoCliente=+((l.pp||0)*(l.ckg||0)).toFixed(2);
       const margineSfrido=l.sfu&&l.psf>0?+((l.psf||0)*(l.ckg||0)).toFixed(2):0;
       return`<tr>
       <td data-l="Data" style="font-size:10px;color:var(--text3)">${esc(l.date)}</td>
@@ -1539,9 +1603,9 @@ function rCom(){
       <td data-l="Materiale"><input class="ie ie-w" value="${esc(l.mat)}" onchange="lav[${ri}].mat=this.value;save();renderPage()"></td>
       <td data-l="Colata"><input class="ie ie-w" value="${esc(l.col||'')}" onchange="lav[${ri}].col=this.value;save();renderPage()"></td>
       <td data-l="Pezzo" style="font-size:10px">${esc(l.pdesc)}</td>
-      <td data-l="Peso kg"><input class="ie" type="number" value="${fmt(l.pp,3)}" onchange="lav[${ri}].pp=+this.value;lav[${ri}].ctot=+(lav[${ri}].pp*(lav[${ri}].ckg||0)).toFixed(2);recalc();save();renderPage()" style="color:var(--accent)"></td>
-      <td data-l="Sfrido kg"><input class="ie" type="number" value="${fmt(l.psf||0,3)}" onchange="lav[${ri}].psf=+this.value;lav[${ri}].psot=lav[${ri}].sfu?lav[${ri}].pp:(lav[${ri}].pp+(+this.value));recalc();save();renderPage()"></td>
-      <td data-l="Tipo sfrido"><select class="ie" onchange="lav[${ri}].sfu=this.value==='riutil';lav[${ri}].psot=lav[${ri}].sfu?lav[${ri}].pp:(lav[${ri}].pp+(lav[${ri}].psf||0));recalc();save();renderPage()">
+      <td data-l="Peso kg"><input class="ie" type="number" value="${fmt(l.pp,3)}" onchange="lav[${ri}].pp=+this.value;lav[${ri}].ctot=+(lav[${ri}].pp*(lav[${ri}].ckg||0)).toFixed(2);lav[${ri}].psot=lav[${ri}].sfu&&lav[${ri}].psf>0?Math.max(0,lav[${ri}].pp-(lav[${ri}].psf||0)):lav[${ri}].pp;recalc();save();renderPage()" style="color:var(--accent)"></td>
+      <td data-l="Sfrido kg"><input class="ie" type="number" value="${fmt(l.psf||0,3)}" onchange="lav[${ri}].psf=+this.value;lav[${ri}].psot=lav[${ri}].sfu&&lav[${ri}].psf>0?Math.max(0,lav[${ri}].pp-lav[${ri}].psf):lav[${ri}].pp;recalc();save();renderPage()"></td>
+      <td data-l="Tipo sfrido"><select class="ie" onchange="lav[${ri}].sfu=this.value==='riutil';lav[${ri}].psot=lav[${ri}].sfu&&lav[${ri}].psf>0?Math.max(0,lav[${ri}].pp-lav[${ri}].psf):lav[${ri}].pp;recalc();save();renderPage()">
         <option value="nessuno" ${!l.sf?'selected':''}>—</option>
         <option value="riutil" ${l.sf&&l.sfu?'selected':''}>Riutil. ✅</option>
         <option value="perso" ${l.sf&&!l.sfu?'selected':''}>Perso ❌</option>
@@ -1549,7 +1613,7 @@ function rCom(){
       <td data-l="Sottratto" style="font-weight:700">${fmt(l.psot,3)}</td>
       <td data-l="€/kg"><input class="ie" type="number" value="${fmt(l.ckg,2)}" onchange="lav[${ri}].ckg=+this.value;lav[${ri}].ctot=+(lav[${ri}].pp*(+this.value)).toFixed(2);save();renderPage()"></td>
       <td data-l="Costo pezzo" style="font-weight:600;color:var(--accent)">${fmtE(l.ctot)}</td>
-      <td data-l="Costo cliente" style="font-weight:600;color:var(--yellow)" title="(pezzo + sfrido) × €/kg">${fmtE(costoCliente)}</td>
+      <td data-l="Costo cliente" style="font-weight:600;color:var(--yellow)" title="Peso lamiera tagliata × €/kg">${fmtE(costoCliente)}</td>
       <td data-l="Margine sfrido" style="font-weight:600;color:${margineSfrido>0?'var(--green)':'var(--text3)'}">${margineSfrido>0?fmtE(margineSfrido):'—'}</td>
       <td style="display:flex;gap:4px">
         <button class="btn btn-bl btn-s" onclick="pBolla('${l.id}')">PDF</button>
@@ -1751,7 +1815,7 @@ window.delStorico=function(id){
 // ═══ GUIDA ═══
 function rGuida(){
   return`<div class="card">
-    <div class="g-h1">📖 Guida MetalTrack v4.2</div>
+    <div class="g-h1">📖 Guida MetalTrack v4.3</div>
     <p class="g-p">MetalTrack è un gestionale per il monitoraggio di lamiere, tondi, sfridi e lavorazioni. I dati sono salvati <strong>sia in locale</strong> (browser) <strong>sia su database cloud</strong> (Appwrite). Il sync avviene automaticamente.</p>
     <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">
       <button class="btn btn-p" onclick="pdfGuida()">📄 Scarica Guida PDF</button>
@@ -1780,7 +1844,7 @@ function rGuida(){
     </div>
 
     <div class="g-section">
-      <div class="g-h2">🧪 Elenco Materiali (Nuovo v4.2)</div>
+      <div class="g-h2">🧪 Elenco Materiali (Nuovo v4.3)</div>
       <p class="g-p">L'app gestisce un <strong>elenco di materiali con densità preimpostate</strong>. Quando aggiungi una lamiera o un tondo, lo selezioni da questa lista: il nome e la densità vengono compilati automaticamente.</p>
       <div class="g-kv"><span>Materiali standard</span><span>Acciaio, Alluminio, Rame, Ottone, Titanio, Ghisa (precaricati)</span></div>
       <div class="g-kv"><span>Aggiungere materiale</span><span>Dropdown → "⚙️ Gestisci elenco materiali…"</span></div>
@@ -1807,11 +1871,11 @@ function rGuida(){
       <div class="g-note">ℹ️ Gli sfridi Riutilizzabili compaiono nel selettore materiali della sezione Lavorazione e possono essere usati come sorgente per nuovi pezzi.</div>
     </div>
     <div class="g-section">
-      <div class="g-h2">🗑 Sfridi Persi (Aggiornato v4.2)</div>
+      <div class="g-h2">🗑 Sfridi Persi (Aggiornato v4.3)</div>
       <p class="g-p">Gli sfridi non riutilizzabili sono materiale scartato. Puoi aggiungerli in due modi:</p>
       <div class="g-step"><div class="g-num">1</div><div class="g-step-txt">Durante una <strong>lavorazione</strong>: scegli sfrido "Perso" — viene scalato automaticamente</div></div>
       <div class="g-step"><div class="g-num">2</div><div class="g-step-txt"><strong>Manualmente</strong> in kg: pulsante "+ Aggiungi Sfrido Perso" nella sezione Sfridi</div></div>
-      <div class="g-warn">⚠️ <strong>Novità v4.2:</strong> lo sfrido perso manuale ora richiede OBBLIGATORIAMENTE la selezione della lamiera/tondo sorgente e viene scalato dal residuo. Se il materiale sorgente si esaurisce, sparisce automaticamente dal selettore delle lavorazioni.</div>
+      <div class="g-warn">⚠️ <strong>Novità v4.3:</strong> lo sfrido perso manuale ora richiede OBBLIGATORIAMENTE la selezione della lamiera/tondo sorgente e viene scalato dal residuo. Se il materiale sorgente si esaurisce, sparisce automaticamente dal selettore delle lavorazioni.</div>
       <div class="g-tip">💡 Entrambi i tipi compaiono nella sezione <strong>Sfridi Persi</strong> con un badge che indica l'origine (Manuale/Lavorazione). Gli sfridi persi manuali sono eliminabili con PIN e ripristinano il residuo del magazzino.</div>
     </div>
     <div class="g-section">
@@ -1826,7 +1890,7 @@ function rGuida(){
     <div class="g-section">
       <div class="g-h2">📋 Commesse</div>
       <p class="g-p">Registro di tutte le lavorazioni reali. Mostra: Data, Cliente, Commessa, Materiale, Peso pezzo, Sfrido, Costo pezzo, Costo cliente (pezzo + sfrido), Margine sfrido riutilizzabile.</p>
-      <div class="g-tip">💡 <strong>Costo cliente</strong> = (Peso pezzo + Sfrido) × €/kg — include lo sfrido pagato dal cliente. Il <strong>Margine sfrido</strong> è il valore recuperabile alla rivendita dello sfrido.</div>
+      <div class="g-tip">💡 <strong>Costo cliente</strong> = Peso lamiera tagliata × €/kg — il cliente paga sempre la lamiera che è stata tagliata per lui. Il <strong>Margine sfrido</strong> è il valore dello sfrido riutilizzabile che resta in magazzino come recupero.</div>
     </div>
     <div class="g-section">
       <div class="g-h2">📅 Storico</div>
@@ -1842,7 +1906,9 @@ function rGuida(){
       <div class="g-formula">Disco: P = π × (Øest/2)² × sp / 10⁹ × ρ (kg)</div>
       <div class="g-formula">Anello: P = π × ((Øest/2)² − (Øint/2)²) × sp / 10⁹ × ρ (kg)</div>
       <div class="g-formula">Costo pezzo = Peso pezzo × €/kg</div>
-      <div class="g-formula">Costo cliente = (Peso pezzo + Sfrido) × €/kg</div>
+      <div class="g-formula">Costo cliente = Peso lamiera tagliata × €/kg</div>
+      <div class="g-formula">Se sfrido riutilizzabile → Sottratto magazzino = Pezzo − Sfrido ♻️</div>
+      <div class="g-formula">Se sfrido perso → Sottratto magazzino = Pezzo intero</div>
       <div style="margin-top:8px">
         <div class="g-kv"><span>Acciaio</span><span>7850 kg/m³</span></div>
         <div class="g-kv"><span>Alluminio</span><span>2700 kg/m³</span></div>
@@ -2222,7 +2288,7 @@ window.pBolla=async function(id){
     y=doc.lastAutoTable.finalY+12;if(y>260)y=260;
     doc.setDrawColor(180);doc.line(M,y+15,M+60,y+15);doc.line(W-M-60,y+15,W-M,y+15);
     doc.setFontSize(8);doc.setTextColor(120);doc.text('Firma Operatore',M,y+20);doc.text('Firma Magazziniere',W-M-60,y+20);
-    doc.setFontSize(7);doc.setTextColor(160);doc.text('Generato da MetalTrack v4.2',W/2,285,{align:'center'});
+    doc.setFontSize(7);doc.setTextColor(160);doc.text('Generato da MetalTrack v4.3',W/2,285,{align:'center'});
     doc.save('Bolla_'+String(l.com)+'_'+String(l.date).replace(/[\/\\ :]/g,'-')+'.pdf');
   }catch(e){alert('Errore PDF: '+e.message);}
 }
@@ -2298,7 +2364,7 @@ window.pdfGuida=async function(){
     // Cover
     doc.setFillColor(12,15,20);doc.rect(0,0,W,60,'F');
     doc.setTextColor(249,115,22);doc.setFontSize(28);doc.setFont('helvetica','bold');doc.text('METALTRACK',M,30);
-    doc.setFontSize(12);doc.setTextColor(155,163,181);doc.text('Guida Utente - Waste Manager v4.2',M,42);
+    doc.setFontSize(12);doc.setTextColor(155,163,181);doc.text('Guida Utente - Waste Manager v4.3',M,42);
     doc.setFontSize(8);doc.setTextColor(107,115,133);doc.text('Generata il '+new Date().toLocaleDateString('it-IT'),M,54);
     y=75;
     const sections=[
@@ -2322,7 +2388,7 @@ window.pdfGuida=async function(){
         'Giallo fisso (IN CODA): il salvataggio e in attesa, verra completato appena possibile.',
         'Sync automatico: quando torni online, tutti i dati locali vengono inviati al cloud senza alcuna azione manuale.'
       ]},
-      {title:'4. Elenco Materiali (v4.2)',body:[
+      {title:'4. Elenco Materiali (v4.3)',body:[
         'L app gestisce un elenco di materiali con densita preimpostate. Quando aggiungi una lamiera o un tondo, lo selezioni da questa lista: il nome e la densita vengono compilati automaticamente.',
         'Materiali standard precaricati: Acciaio (7850), Alluminio (2700), Rame (8900), Ottone (8500), Titanio (4500), Ghisa (7200) kg/m3.',
         'Aggiungere materiali: dal dropdown "Materiale" scegli "Gestisci elenco materiali..." per aprire la tabella di gestione.',
@@ -2347,7 +2413,7 @@ window.pdfGuida=async function(){
         'b) Forma: Lamiera rettangolare (LxWxsp), Disco pieno (Destxsp), Anello (Dest/Dintxsp), Peso diretto (kg).',
         'Il peso viene calcolato automaticamente dalla forma. Gli sfridi disponibili appaiono nel selettore Lavorazione come opzione di materiale sorgente.'
       ]},
-      {title:'7. Sfridi Persi (v4.2)',body:[
+      {title:'7. Sfridi Persi (v4.3)',body:[
         'Sfridi non riutilizzabili, scartati. Si possono registrare in due modi:',
         '1) Durante una lavorazione: scegliendo opzione "Perso" - il peso viene scalato automaticamente dal magazzino sorgente.',
         '2) Manualmente: pulsante "+ Aggiungi Sfrido Perso". Richiede OBBLIGATORIAMENTE la scelta della lamiera/tondo sorgente e i kg di sfrido.',
@@ -2380,7 +2446,9 @@ window.pdfGuida=async function(){
         'Disco pieno: P = pi x (Dest/2)^2 x sp / 10^9 x rho (kg)',
         'Anello: P = pi x ((Dest/2)^2 - (Dint/2)^2) x sp / 10^9 x rho (kg)',
         'Costo pezzo = Peso pezzo x euro/kg',
-        'Costo cliente = (Peso pezzo + Sfrido) x euro/kg',
+        'Costo cliente = Peso lamiera tagliata x euro/kg (il cliente paga sempre la lamiera che gli e stata tagliata)',
+        'Sfrido RIUTILIZZABILE: sottratto dal magazzino = Pezzo - Sfrido riutilizzabile (lo sfrido resta disponibile in magazzino come Sfridi riutilizzabili)',
+        'Sfrido PERSO: sottratto dal magazzino = Pezzo intero (lo sfrido finisce nel cestino, contabilizzato in Sfridi Persi)',
         'Efficienza = Peso prodotto / (Peso prodotto + Sfrido perso) x 100%',
         'Densita comuni: Acciaio 7850 | Alluminio 2700 | Rame 8900 | Ottone 8500 | Titanio 4500 | Ghisa 7200'
       ]},
@@ -2406,7 +2474,7 @@ window.pdfGuida=async function(){
     });
     doc.setFontSize(7);doc.setTextColor(160);
     for(let i=2;i<=doc.getNumberOfPages();i++){
-      doc.setPage(i);doc.text('MetalTrack v4.2 - Guida Utente',W/2,290,{align:'center'});
+      doc.setPage(i);doc.text('MetalTrack v4.3 - Guida Utente',W/2,290,{align:'center'});
       doc.text('Pag.'+(i-1)+'/'+(doc.getNumberOfPages()-1),W-M,290,{align:'right'});
     }
     doc.save('MetalTrack_Guida.pdf');
@@ -2419,7 +2487,8 @@ window.expCSV=function(){
   if(!lavReali.length)return;
   let c='Data,Cliente,Commessa,Materiale,Colata,Pezzo,Peso_pezzo_kg,Sfrido_kg,Tipo_sfrido,Sottratto_kg,EuroKg,Costo_EUR,Costo_cliente_EUR\n';
   lavReali.forEach(l=>{
-    const cc=+((l.pp+(l.psf||0))*(l.ckg||0)).toFixed(2);
+    // v4.3: costo cliente = peso lamiera tagliata × €/kg
+    const cc=+((l.pp||0)*(l.ckg||0)).toFixed(2);
     c+=`${l.date},${l.cli},${l.com},${l.mat},${l.col||''},"${l.pdesc}",${fmt(l.pp,3)},${fmt(l.psf||0,3)},${l.sf?(l.sfu?'Riutilizzabile':'Perso'):'—'},${fmt(l.psot,3)},${fmt(l.ckg,2)},${fmt(l.ctot,2)},${fmt(cc,2)}\n`;
   });
   const b=new Blob([c],{type:'text/csv'});const a=document.createElement('a');
