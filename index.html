@@ -52,6 +52,8 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;-we
 .conn-dot.offline{background:var(--text3);box-shadow:none}
 .conn-dot.pending{background:var(--yellow);box-shadow:0 0 6px rgba(234,179,8,.5);animation:pulse-y 1.4s infinite}
 @keyframes pulse-y{0%,100%{opacity:1}50%{opacity:.25}}
+@keyframes rt-flash{0%{transform:scale(1);box-shadow:0 0 0 0 rgba(34,197,94,.7)}50%{transform:scale(1.6);box-shadow:0 0 0 6px rgba(34,197,94,0)}100%{transform:scale(1);box-shadow:0 0 6px rgba(34,197,94,.7)}}
+.conn-dot.rt-flash{animation:rt-flash .6s ease}
 .conn-wrap{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--text3);flex-shrink:0;font-family:'Space Mono',monospace;margin-left:4px;cursor:default}
 .mmenu{display:none;position:fixed;top:56px;left:0;right:0;background:var(--bg2);border-bottom:1px solid var(--border);padding:6px;z-index:99;flex-direction:column;gap:2px}
 .mmenu.open{display:flex}
@@ -83,9 +85,44 @@ td{padding:6px;border-bottom:1px solid var(--border);color:var(--text2);white-sp
 tr:hover td{background:var(--bg3)}
 tr.exh td{opacity:.4}
 
-/* ── MOBILE CARD-LIST per tabelle ── */
+/* ── MAGAZZINO: sempre card-view (mai scroll orizzontale) ── */
+/* Ogni riga magazzino diventa una card compatta con grid interna.
+   Si adatta automaticamente: 2 colonne su desktop large, 1 su mobile. */
+.mag-cards{overflow:visible}
+.mag-cards table{display:block}
+.mag-cards thead{display:none}
+.mag-cards tbody{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:10px}
+.mag-cards tbody tr{display:grid;grid-template-columns:repeat(2,1fr);gap:6px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:12px 14px;transition:border-color .15s}
+.mag-cards tbody tr:hover{border-color:var(--border2)}
+.mag-cards tbody tr.exh{opacity:.5}
+.mag-cards tbody td{display:flex;flex-direction:column;align-items:flex-start;gap:3px;padding:2px 0;border:none;font-size:11px;white-space:normal;min-height:auto;line-height:1.3}
+.mag-cards tbody td[data-l]::before{content:attr(data-l);font-family:'Space Mono',monospace;font-size:8.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);opacity:.8}
+.mag-cards tbody td[data-l=""]::before,.mag-cards tbody td:not([data-l])::before{display:none}
+/* Nascondi celle informative vuote: se contengono solo whitespace e non hanno input, non servono */
+.mag-cards tbody td[data-l="Sfrido ♻️"]:empty,
+.mag-cards tbody td[data-l="Sfrido 🗑"]:empty{display:none}
+/* Campi che occupano due colonne (più importanti) */
+.mag-cards tbody td[data-l="Materiale"],
+.mag-cards tbody td[data-l="Dim mm"]{grid-column:span 2}
+/* Ultima td = i bottoni azione, su tutta la riga, allineati a destra */
+.mag-cards tbody td:last-child{grid-column:span 2;flex-direction:row;justify-content:flex-end;gap:6px;margin-top:4px;padding-top:8px;border-top:1px solid var(--border)}
+.mag-cards tbody td:last-child::before{display:none}
+/* Input inline compatti dentro card */
+.mag-cards tbody td .ie,.mag-cards tbody td input.ie,.mag-cards tbody td select.ie{width:100%;max-width:100%;font-size:12px;padding:4px 6px;height:28px;text-align:left}
+.mag-cards tbody td .ie.ie-n{width:55px;display:inline-block}
+/* Mobile: singola colonna interna */
+@media(max-width:560px){
+  .mag-cards tbody{grid-template-columns:1fr}
+  .mag-cards tbody tr{grid-template-columns:1fr;padding:12px}
+  .mag-cards tbody td[data-l="Materiale"],
+  .mag-cards tbody td[data-l="Dim mm"]{grid-column:span 1}
+  .mag-cards tbody td:last-child{grid-column:span 1}
+  .mag-cards tbody td .ie{font-size:14px;height:36px;padding:6px 8px}
+}
+
+/* ── MOBILE CARD-LIST per altre tabelle (commesse, storico, sfridi) ── */
 @media(max-width:700px){
-  /* Magazzino, Sfridi, Commesse: ogni <tr> diventa una card */
+  /* Sfridi, Commesse: ogni <tr> diventa una card */
   .mob-cards thead{display:none}
   .mob-cards tbody tr{display:block;background:var(--bg3);border:1px solid var(--border);border-radius:8px;margin-bottom:10px;padding:10px 12px;position:relative}
   .mob-cards tbody tr.exh{opacity:.45}
@@ -288,13 +325,93 @@ let awClient, awDB;
 let connStatus  = 'offline';  // 'online' | 'syncing' | 'offline' | 'pending'
 let _pendingSave = false;      // c'è un salvataggio in attesa di connessione
 let _saveTimer   = null;       // debounce timer
+let _rtUnsubscribe = null;     // funzione per chiudere la subscription realtime
+let _lastLocalWriteAt = 0;     // timestamp ultimo save() locale — anti-echo realtime
+const _RT_ECHO_WINDOW = 2500;  // ms: eventi realtime arrivati entro questo tempo dopo una scrittura locale sono ignorati (sono il nostro stesso update)
 
 function awInit(){
   try{
     const {Client, Databases} = Appwrite;
     awClient = new Client().setEndpoint(AW_ENDPOINT).setProject(AW_PROJECT);
     awDB = new Databases(awClient);
+    awSubscribeRealtime();
   }catch(e){ console.warn('Appwrite SDK non disponibile', e); }
+}
+
+// ═══ APPWRITE REALTIME ═══
+// Si sottoscrive agli eventi di tutte le collection. Quando un altro dispositivo
+// modifica il database, riceviamo un messaggio WebSocket e aggiorniamo l'app
+// senza bisogno di ricaricare la pagina.
+function awSubscribeRealtime(){
+  if(!awClient||!awClient.subscribe)return;
+  if(_rtUnsubscribe){try{_rtUnsubscribe();}catch(e){}}
+  // Canali: una subscription per ogni collection del nostro progetto
+  const channels = Object.values(AW_COLS).map(col=>`databases.${AW_DB}.collections.${col}.documents.${DOC_ID}`);
+  try{
+    _rtUnsubscribe = awClient.subscribe(channels, evt=>{
+      // Anti-echo: se abbiamo appena scritto noi, ignora il nostro stesso update
+      if(Date.now()-_lastLocalWriteAt < _RT_ECHO_WINDOW) return;
+      awHandleRealtimeEvent(evt);
+    });
+  }catch(e){
+    console.warn('Realtime subscribe failed:', e);
+  }
+}
+
+// Gestisce un singolo evento realtime. Aggiorna la variabile corretta in base
+// alla collection ricevuta, salva in locale (no awSaveAll — non è una nostra modifica),
+// e re-renderizza se l'utente non sta digitando in un input.
+function awHandleRealtimeEvent(evt){
+  try{
+    const payload = evt.payload;
+    if(!payload||!payload.$collectionId||payload.$id!==DOC_ID) return;
+    const colId = payload.$collectionId;
+    let data;
+    try{ data = JSON.parse(payload.payload); }catch(e){ return; }
+    // Trova la chiave interna in base al collection ID ricevuto
+    const key = Object.keys(AW_COLS).find(k=>AW_COLS[k]===colId);
+    if(!key) return;
+    // Aggiorna la variabile corrispondente + localStorage
+    const mapping = {
+      mag:     {arr:()=>mag,      set:v=>{mag=v;},      ls:'st4m'},
+      lav:     {arr:()=>lav,      set:v=>{lav=v;},      ls:'st4l'},
+      sf:      {arr:()=>sfRiutil, set:v=>{sfRiutil=v;}, ls:'st4sf'},
+      snaps:   {arr:()=>snaps,    set:v=>{snaps=v;},    ls:'st4s'},
+      storici: {arr:()=>storici,  set:v=>{storici=v;},  ls:'st4st'},
+      mat:     {arr:()=>materiali,set:v=>{materiali=v;},ls:'st4mat'}
+    };
+    const m = mapping[key]; if(!m) return;
+    m.set(data);
+    try{ localStorage.setItem(m.ls, JSON.stringify(data)); }catch(e){}
+    // Ricalcola i residui del magazzino (indispensabile dopo update remoti di mag o lav)
+    if(key==='mag'||key==='lav') recalc();
+    // Re-render intelligente: se l'utente sta digitando in un input o in una modale,
+    // evitiamo il render completo che perderebbe focus/testo. Facciamo solo renderPage
+    // (aggiorna il contenuto ma non la nav né la modale aperta).
+    if(appUnlocked){
+      const ae = document.activeElement;
+      const isEditing = ae && (ae.tagName==='INPUT'||ae.tagName==='SELECT'||ae.tagName==='TEXTAREA');
+      if(S.modal||isEditing){
+        // Piccolo indicatore flash sul pallino per segnalare dato aggiornato
+        flashSyncDot();
+      } else {
+        renderPage();
+        flashSyncDot();
+      }
+    }
+  }catch(e){
+    console.warn('Realtime handler error:', e);
+  }
+}
+
+// Flash visivo sul pallino per indicare che un dato è arrivato dal realtime
+let _flashTimer = null;
+function flashSyncDot(){
+  const dot = document.getElementById('conn-dot');
+  if(!dot) return;
+  dot.classList.add('rt-flash');
+  if(_flashTimer) clearTimeout(_flashTimer);
+  _flashTimer = setTimeout(()=>dot.classList.remove('rt-flash'), 600);
 }
 
 function setConn(s){
@@ -370,6 +487,7 @@ function awSaveAll(){
       return;
     }
     setConn('syncing');
+    _lastLocalWriteAt = Date.now();  // anti-echo: marcatore per ignorare il nostro stesso update realtime
     try{
       // Scrittura materiali è "best-effort": se la collection non esiste su Appwrite
       // non blocca il resto del sync. L'utente può creare la collection 'materiali'
@@ -866,7 +984,7 @@ function rMag(){
       <button class="btn btn-bl btn-s" onclick="snap()">Snapshot</button>
       <button class="btn btn-g btn-s" onclick="S.modal={type:'snaps'};render()">Storico Snap</button>
     </div></div>
-    ${mag.length===0?'<div class="empty">Magazzino vuoto</div>':`<div class="tw"><table class="mob-cards">
+    ${mag.length===0?'<div class="empty">Magazzino vuoto</div>':`<div class="mag-cards"><table>
       <thead><tr><th>Colata</th><th>Materiale</th><th>Tipo</th><th>Dimensioni mm</th><th>Sup m²</th><th>Vol m³</th><th>Dens kg/m³</th><th>Peso kg</th><th>€/kg</th><th>Valore</th><th>Residuo kg</th><th>Data Ins.</th><th>Data Esaur.</th><th>Stato</th><th>Sfrido ♻️</th><th>Sfrido 🗑</th><th></th></tr></thead>
       <tbody>${mag.map((m,i)=>mRow(m,i)).join('')}</tbody></table></div>`}
   </div>`;
