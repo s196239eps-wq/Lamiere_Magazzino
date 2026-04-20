@@ -580,7 +580,7 @@ function creaSnapshotMese(key,data){
     sfRiutil:sfRiutil.map(s=>({...s})),
     totSfUsato:sfRiutil.filter(s=>!s.usato).reduce((a,s)=>a+s.peso,0),
     totSfUsatoVal:sfRiutil.filter(s=>!s.usato).reduce((a,s)=>a+s.peso*(s.ckg||0),0),
-    totSfPerso:lav.filter(l=>l.sf&&!l.sfu&&l.psf>0&&!l._sfPersoManuale).reduce((a,l)=>a+l.psf,0),
+    totSfPerso:lav.filter(l=>l.sf&&!l.sfu&&l.psf>0).reduce((a,l)=>a+l.psf,0),
     valoreMag:mag.reduce((a,m)=>a+m.res*(m.ckg||0),0),
     lavorazioni:lavMese.map(l=>({...l}))
   };
@@ -677,10 +677,12 @@ function rDashboard(){
   const totValMag=mag.reduce((a,m)=>a+m.res*(m.ckg||0),0);
   const totSfRiutPeso=sfRiutil.filter(s=>!s.usato).reduce((a,s)=>a+s.peso,0);
   const totSfRiutVal=sfRiutil.filter(s=>!s.usato).reduce((a,s)=>a+s.peso*(s.ckg||0),0);
+  // lavReali = lavorazioni vere (escludono sfridi persi manuali perché NON sono pezzi prodotti)
   const lavReali=lav.filter(l=>!l._sfPersoManuale);
   const totPezzi=lavReali.length;
   const totPesoProd=lavReali.reduce((a,l)=>a+l.pp,0);
-  const totSfPersoKg=lavReali.filter(l=>l.sf&&!l.sfu&&l.psf>0).reduce((a,l)=>a+l.psf,0);
+  // FIX: totali sfrido perso includono TUTTI gli sfridi persi (lavorazioni + manuali)
+  const totSfPersoKg=lav.filter(l=>l.sf&&!l.sfu&&l.psf>0).reduce((a,l)=>a+l.psf,0);
   const totSfRiutKg=lavReali.filter(l=>l.sfu&&l.psf>0).reduce((a,l)=>a+l.psf,0);
   const totInput=totPesoProd+totSfPersoKg;
   const effUso=totInput>0?(totPesoProd/totInput*100):100;
@@ -690,7 +692,8 @@ function rDashboard(){
   function magEff(m){
     const lavM=lavReali.filter(l=>l.sid===m.id);
     const ppTot=lavM.reduce((a,l)=>a+l.pp,0);
-    const sfPerso=lavM.filter(l=>l.sf&&!l.sfu&&l.psf>0).reduce((a,l)=>a+l.psf,0);
+    // FIX: sfPerso per materiale include anche manuali (filtro su lav, non lavReali)
+    const sfPerso=lav.filter(l=>l.sid===m.id&&l.sf&&!l.sfu&&l.psf>0).reduce((a,l)=>a+l.psf,0);
     const sfRiut=lavM.filter(l=>l.sfu&&l.psf>0).reduce((a,l)=>a+l.psf,0);
     const usato=ppTot+sfPerso;
     const eff=usato>0?(ppTot/usato*100):100;
@@ -1243,6 +1246,7 @@ window.lvC=function(){
             <option value="rett">Lastra rettangolare (L × W)</option>
             <option value="disco">Disco pieno (Ø est.)</option>
             <option value="anello">Anello (Ø est. / Ø int.)</option>
+            <option value="peso">⚖️ Peso diretto (kg) — senza dimensioni</option>
           </select>
         </div>
       </div>
@@ -1269,6 +1273,8 @@ window.sfFormaLav=function(){
     dims.innerHTML=`<div class="fi"><label class="fl">Ø Esterno (mm)</label><input class="fx" id="sf_a" type="number" placeholder="es. 200" oninput="lvP()"></div>`;
   }else if(forma==='anello'){
     dims.innerHTML=`<div class="fi"><label class="fl">Ø Esterno (mm)</label><input class="fx" id="sf_a" type="number" placeholder="es. 200" oninput="lvP()"></div><div class="fi"><label class="fl">Ø Interno (mm)</label><input class="fx" id="sf_b" type="number" placeholder="es. 100" oninput="lvP()"></div>`;
+  }else if(forma==='peso'){
+    dims.innerHTML=`<div class="fi s2"><label class="fl">Peso sfrido (kg) <span style="color:var(--text3);font-weight:400">— inserimento diretto</span></label><input class="fx" id="sf_pkg" type="number" step="0.001" placeholder="es. 1.250" oninput="lvP()"></div>`;
   }
   lvP();
 };
@@ -1312,19 +1318,30 @@ function gLD(){
   let psf=0,sfInfo=null,sfForma='';
   if(hsf){
     const st=document.getElementById('sf_t')?.value||'rett';
-    const sa=+(document.getElementById('sf_a')?.value||0);
-    const sb=+(document.getElementById('sf_b')?.value||0);
-    const thick=spEff/1000;
     sfForma=st;
-    if(sa>0){
-      let ssup=0,svol=0;
-      if(st==='rett'){const l1=sa/1000,l2=(sb||sa)/1000;ssup=l1*l2;svol=ssup*thick;}
-      else if(st==='disco'){const r=(sa/1000)/2;ssup=Math.PI*r*r;svol=ssup*thick;}
-      else if(st==='anello'){const re=(sa/1000)/2,ri=(sb/1000)/2;ssup=Math.PI*(re*re-ri*ri);svol=ssup*thick;}
-      psf=+(svol*(sh.dens||7850)).toFixed(3);
-      sfInfo={tipo:st,d1:sa,d2:sb,sup:ssup,vol:svol,peso:psf};
-      const si=document.getElementById('sfI');
-      if(si)si.innerHTML=`<div class="sinfo"><div class="sr"><span>Sup sfrido:</span><span>${fmt(ssup,4)} m²</span></div><div class="sr"><span>Vol:</span><span>${fmt(svol,6)} m³</span></div><div class="sr"><span><strong>Peso sfrido:</strong></span><span style="color:var(--blue)"><strong>${fmt(psf,3)} kg</strong></span></div></div>`;
+    if(st==='peso'){
+      // Peso diretto: nessuna dimensione, solo kg
+      const pkg=+(document.getElementById('sf_pkg')?.value||0);
+      if(pkg>0){
+        psf=+pkg.toFixed(3);
+        sfInfo={tipo:'peso',d1:0,d2:0,sup:0,vol:0,peso:psf};
+        const si=document.getElementById('sfI');
+        if(si)si.innerHTML=`<div class="sinfo"><div class="sr"><span><strong>Peso sfrido (diretto):</strong></span><span style="color:var(--blue)"><strong>${fmt(psf,3)} kg</strong></span></div></div>`;
+      }
+    } else {
+      const sa=+(document.getElementById('sf_a')?.value||0);
+      const sb=+(document.getElementById('sf_b')?.value||0);
+      const thick=spEff/1000;
+      if(sa>0){
+        let ssup=0,svol=0;
+        if(st==='rett'){const l1=sa/1000,l2=(sb||sa)/1000;ssup=l1*l2;svol=ssup*thick;}
+        else if(st==='disco'){const r=(sa/1000)/2;ssup=Math.PI*r*r;svol=ssup*thick;}
+        else if(st==='anello'){const re=(sa/1000)/2,ri=(sb/1000)/2;ssup=Math.PI*(re*re-ri*ri);svol=ssup*thick;}
+        psf=+(svol*(sh.dens||7850)).toFixed(3);
+        sfInfo={tipo:st,d1:sa,d2:sb,sup:ssup,vol:svol,peso:psf};
+        const si=document.getElementById('sfI');
+        if(si)si.innerHTML=`<div class="sinfo"><div class="sr"><span>Sup sfrido:</span><span>${fmt(ssup,4)} m²</span></div><div class="sr"><span>Vol:</span><span>${fmt(svol,6)} m³</span></div><div class="sr"><span><strong>Peso sfrido:</strong></span><span style="color:var(--blue)"><strong>${fmt(psf,3)} kg</strong></span></div></div>`;
+      }
     }
   }
   const sfu=hsf&&document.getElementById('ck_su')?.classList?.contains('on');
@@ -1357,12 +1374,31 @@ window.subLav=function(){
       id:uid(),date:new Date().toLocaleDateString('it-IT'),
       mat:d.sh.mat,col:d.sh.col,tipo:d.sh.tipo,
       forma:d.sfForma,
-      desc:`da ${d.desc} — ${d.sfForma==='rett'?`${d.sfInfo.d1}×${d.sfInfo.d2}mm`:d.sfForma==='disco'?`Ø${d.sfInfo.d1}mm`:`Ø${d.sfInfo.d1}/Ø${d.sfInfo.d2}mm`}`,
+      desc:`da ${d.desc} — ${d.sfForma==='rett'?`${d.sfInfo.d1}×${d.sfInfo.d2}mm`:d.sfForma==='disco'?`Ø${d.sfInfo.d1}mm`:d.sfForma==='anello'?`Ø${d.sfInfo.d1}/Ø${d.sfInfo.d2}mm`:'peso diretto'}`,
       peso:d.psf,ckg:d.sh.ckg,spessore:d.spEff||0,dens:d.sh.dens||7850,
       lavId:l.id,note:'',usato:false
     });
   }
-  recalc();save();S.modal={type:'rep',data:l};render();
+  recalc();
+  // Chiedi se flaggare la lamiera sorgente come Esaurita quando lo sfrido è PERSO
+  // e rimane ancora residuo disponibile nel magazzino (non ha senso se è uno sfrido ♻️ da sfrido).
+  let flagEsaurito=false;
+  if(d.hsf&&!d.sfu&&d.psf>0&&!d.sh._isSf){
+    const m=mag.find(x=>x.id===d.sh.id);
+    if(m&&!m.esa&&m.res>0.001){
+      flagEsaurito=confirm(
+        `Lo sfrido generato è stato segnato come NON riutilizzabile.\n\n`+
+        `Residuo rimanente su "${m.mat} ${m.col||''}": ${fmt(m.res,3)} kg.\n\n`+
+        `Vuoi segnare questa lamiera/tondo come ESAURITA?\n`+
+        `(non comparirà più nel menu delle lavorazioni successive)`
+      );
+      if(flagEsaurito){
+        m.esa=true;
+        if(!m.dataEsaurimento)m.dataEsaurimento=new Date().toLocaleDateString('it-IT');
+      }
+    }
+  }
+  save();S.modal={type:'rep',data:l};render();
 }
 
 // ═══ COMMESSE ═══
@@ -1414,25 +1450,36 @@ let storicoFiltro='mese';
 function rStorico(){
   const now=new Date();
   const lavReali=lav.filter(l=>!l._sfPersoManuale&&!l.manuale);
-  let label='',filtrati=[];
+  // Sfridi persi manuali separati — li aggiungiamo ai totali ma non li contiamo come lavorazioni
+  const sfPersiManuali=lav.filter(l=>l._sfPersoManuale);
+  let label='',filtrati=[],sfPersiManualiFiltr=[];
+  const matchDate=(d,fn)=>{if(!d)return false;const p=d.split('/');return fn(p);};
   if(storicoFiltro==='giorno'){
     const oggi=now.toLocaleDateString('it-IT');
     filtrati=lavReali.filter(l=>l.date&&(l.date.startsWith(oggi)||l.date.includes(oggi)));
+    sfPersiManualiFiltr=sfPersiManuali.filter(l=>l.date&&(l.date.startsWith(oggi)||l.date.includes(oggi)));
     label='Oggi ('+oggi+')';
   }else if(storicoFiltro==='mese'){
     const mm=String(now.getMonth()+1).padStart(2,'0'),yy=now.getFullYear();
-    filtrati=lavReali.filter(l=>{if(!l.date)return false;const p=l.date.split('/');return p.length>=3&&p[1]===mm&&p[2].startsWith(String(yy));});
+    const fMese=p=>p.length>=3&&p[1]===mm&&p[2].startsWith(String(yy));
+    filtrati=lavReali.filter(l=>matchDate(l.date,fMese));
+    sfPersiManualiFiltr=sfPersiManuali.filter(l=>matchDate(l.date,fMese));
     label='Questo mese ('+mm+'/'+yy+')';
   }else if(storicoFiltro==='anno'){
     const yy=String(now.getFullYear());
-    filtrati=lavReali.filter(l=>{if(!l.date)return false;const p=l.date.split('/');return p.length>=3&&p[2].startsWith(yy);});
+    const fAnno=p=>p.length>=3&&p[2].startsWith(yy);
+    filtrati=lavReali.filter(l=>matchDate(l.date,fAnno));
+    sfPersiManualiFiltr=sfPersiManuali.filter(l=>matchDate(l.date,fAnno));
     label='Quest\'anno ('+yy+')';
   }
 
   const totPezzi=filtrati.length;
   const totPesoProd=filtrati.reduce((a,l)=>a+l.pp,0);
   const totSfRiutil=filtrati.filter(l=>l.sfu&&l.psf>0).reduce((a,l)=>a+l.psf,0);
-  const totSfPerso=filtrati.filter(l=>l.sf&&!l.sfu&&l.psf>0).reduce((a,l)=>a+l.psf,0);
+  // FIX: sfrido perso somma lavorazioni + manuali
+  const totSfPersoLav=filtrati.filter(l=>l.sf&&!l.sfu&&l.psf>0).reduce((a,l)=>a+l.psf,0);
+  const totSfPersoManuale=sfPersiManualiFiltr.reduce((a,l)=>a+l.psf,0);
+  const totSfPerso=totSfPersoLav+totSfPersoManuale;
   const totCostoPezzi=filtrati.reduce((a,l)=>a+l.ctot,0);
   const totInput=totPesoProd+totSfPerso;
   const effUso=totInput>0?((totPesoProd/totInput)*100):100;
@@ -2069,17 +2116,23 @@ window.pdfAnnuale=async function(){
     const doc=new jsPDF();const W=210,M=14;let y=20;
     const anno=new Date().getFullYear();
     const lavReali=lav.filter(l=>!l._sfPersoManuale&&!l.manuale);
+    const sfPersiManuali=lav.filter(l=>l._sfPersoManuale);
     doc.setFontSize(20);doc.setFont('helvetica','bold');doc.setTextColor(249,115,22);doc.text('METALTRACK — Report Annuale '+anno,M,y);y+=8;
     doc.setFontSize(8);doc.setTextColor(120);doc.text('Generato il '+new Date().toLocaleString('it-IT'),M,y);y+=12;
     const mNomi=['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
     let totGlob={pezzi:0,peso:0,sfR:0,sfP:0,costo:0};
     for(let mi=0;mi<12;mi++){
       const mm=String(mi+1).padStart(2,'0');
-      const meseL=lavReali.filter(l=>l.date&&(()=>{const p=l.date.split('/');return p.length>=3&&p[1]===mm&&p[2].startsWith(String(anno));})());
-      if(meseL.length===0)continue;
+      const mmMatch=l=>l.date&&(()=>{const p=l.date.split('/');return p.length>=3&&p[1]===mm&&p[2].startsWith(String(anno));})();
+      const meseL=lavReali.filter(mmMatch);
+      const meseSfManuali=sfPersiManuali.filter(mmMatch);
+      if(meseL.length===0&&meseSfManuali.length===0)continue;
       if(y>250){doc.addPage();y=20;}
       const mesePeso=meseL.reduce((a,l)=>a+l.pp,0);
-      const meseSfP=meseL.filter(l=>l.sf&&!l.sfu&&l.psf>0).reduce((a,l)=>a+l.psf,0);
+      // FIX: sfrido perso mensile = lavorazioni + manuali
+      const meseSfPLav=meseL.filter(l=>l.sf&&!l.sfu&&l.psf>0).reduce((a,l)=>a+l.psf,0);
+      const meseSfPMan=meseSfManuali.reduce((a,l)=>a+l.psf,0);
+      const meseSfP=meseSfPLav+meseSfPMan;
       const meseSfR=meseL.filter(l=>l.sfu&&l.psf>0).reduce((a,l)=>a+l.psf,0);
       const meseCosto=meseL.reduce((a,l)=>a+l.ctot,0);
       totGlob.pezzi+=meseL.length;totGlob.peso+=mesePeso;totGlob.sfR+=meseSfR;totGlob.sfP+=meseSfP;totGlob.costo+=meseCosto;
