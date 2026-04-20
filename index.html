@@ -171,6 +171,17 @@ select.fx{cursor:pointer}
 .dash-eff{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px}
 @media(max-width:480px){.dash-eff{grid-template-columns:1fr;gap:8px}}
 
+/* ── MATERIAL TOTALS CARDS ── */
+.mat-totals-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px}
+@media(max-width:480px){.mat-totals-grid{grid-template-columns:1fr 1fr;gap:8px}}
+.mat-card{border:1px solid;border-radius:10px;padding:14px 14px 10px;transition:transform .15s,box-shadow .15s;display:flex;flex-direction:column;gap:4px}
+.mat-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.25)}
+.mat-card-name{font-family:'Space Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:1px;font-weight:700;opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mat-card-kg{font-size:24px;font-weight:700;line-height:1.15;font-family:'DM Sans',sans-serif}
+@media(max-width:480px){.mat-card-kg{font-size:20px}.mat-card{padding:12px 12px 8px}}
+.mat-card-detail{display:flex;gap:10px;font-size:10px;color:var(--text2);font-family:'Space Mono',monospace;flex-wrap:wrap}
+.mat-card-foot{display:flex;gap:8px;font-size:9px;color:var(--text3);margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,.06);font-family:'Space Mono',monospace;align-items:center}
+
 /* ── LOGIN ── */
 .login-screen{position:fixed;inset:0;background:var(--bg);z-index:1000;display:flex;align-items:center;justify-content:center;flex-direction:column;padding:20px}
 .login-logo{font-family:'Space Mono',monospace;font-size:28px;font-weight:700;color:var(--accent);letter-spacing:3px;margin-bottom:4px}
@@ -748,6 +759,69 @@ function rDashboard(){
       </div>
     </div>
   </div>
+  ${(()=>{
+    // ═══ TOTALI PER MATERIALE — schede dinamiche ═══
+    // Aggrega i kg residui del magazzino raggruppando per nome materiale (case-insensitive).
+    // Include anche gli sfridi riutilizzabili disponibili. Le schede si creano automaticamente
+    // per ogni nuovo materiale presente in magazzino.
+    const totaliMat={};
+    mag.forEach(m=>{
+      if(m.esa||m.res<=0.001)return;
+      const key=(m.mat||'Non specificato').trim();
+      if(!totaliMat[key])totaliMat[key]={nome:key,resKg:0,nLamiere:0,nTondi:0,valore:0,sfridoKg:0};
+      totaliMat[key].resKg+=m.res;
+      totaliMat[key].valore+=m.res*(m.ckg||0);
+      if(m.tipo==='lamiera')totaliMat[key].nLamiere++;
+      else totaliMat[key].nTondi++;
+    });
+    sfRiutil.filter(s=>!s.usato&&s.peso>0).forEach(s=>{
+      const key=(s.mat||'Non specificato').trim();
+      if(!totaliMat[key])totaliMat[key]={nome:key,resKg:0,nLamiere:0,nTondi:0,valore:0,sfridoKg:0};
+      totaliMat[key].sfridoKg+=s.peso;
+      totaliMat[key].valore+=s.peso*(s.ckg||0);
+    });
+    const matList=Object.values(totaliMat).sort((a,b)=>b.resKg+b.sfridoKg-(a.resKg+a.sfridoKg));
+    if(matList.length===0)return'';
+    // Colori pastello distintivi ciclici — il materiale mantiene lo stesso colore nel tempo
+    // perché assegnato tramite hash deterministico del nome.
+    const PALETTE=[
+      {bg:'rgba(249,115,22,.08)',bd:'rgba(249,115,22,.35)',fg:'var(--accent)'},
+      {bg:'rgba(59,130,246,.08)',bd:'rgba(59,130,246,.35)',fg:'var(--blue)'},
+      {bg:'rgba(34,197,94,.08)',bd:'rgba(34,197,94,.35)',fg:'var(--green)'},
+      {bg:'rgba(234,179,8,.10)',bd:'rgba(234,179,8,.40)',fg:'var(--yellow)'},
+      {bg:'rgba(168,85,247,.10)',bd:'rgba(168,85,247,.35)',fg:'#c084fc'},
+      {bg:'rgba(239,68,68,.08)',bd:'rgba(239,68,68,.30)',fg:'var(--red)'},
+      {bg:'rgba(20,184,166,.10)',bd:'rgba(20,184,166,.35)',fg:'#2dd4bf'},
+      {bg:'rgba(236,72,153,.10)',bd:'rgba(236,72,153,.35)',fg:'#f472b6'}
+    ];
+    const colorFor=nome=>{
+      let h=0;for(let i=0;i<nome.length;i++)h=((h<<5)-h+nome.charCodeAt(i))|0;
+      return PALETTE[Math.abs(h)%PALETTE.length];
+    };
+    const totGen=matList.reduce((a,m)=>a+m.resKg+m.sfridoKg,0);
+    return`<div class="card">
+      <div class="chd"><div class="ct">Totali per Materiale</div>
+        <div style="font-size:11px;color:var(--text3)">${matList.length} tipi | ${fmt(totGen,1)} kg totali (magazzino + sfridi ♻️)</div>
+      </div>
+      <div class="mat-totals-grid">
+        ${matList.map(m=>{const c=colorFor(m.nome);const tot=m.resKg+m.sfridoKg;return`
+          <div class="mat-card" style="background:${c.bg};border-color:${c.bd}">
+            <div class="mat-card-name" style="color:${c.fg}">${esc(m.nome)}</div>
+            <div class="mat-card-kg" style="color:${c.fg}">${fmt(tot,1)} <span style="font-size:12px;font-weight:500;opacity:.85">kg</span></div>
+            <div class="mat-card-detail">
+              ${m.resKg>0?`<span>📦 ${fmt(m.resKg,1)} kg</span>`:''}
+              ${m.sfridoKg>0?`<span style="color:var(--blue)">♻️ ${fmt(m.sfridoKg,1)} kg</span>`:''}
+            </div>
+            <div class="mat-card-foot">
+              ${m.nLamiere>0?`<span title="Lamiere">L:${m.nLamiere}</span>`:''}
+              ${m.nTondi>0?`<span title="Tondi">T:${m.nTondi}</span>`:''}
+              <span style="margin-left:auto;font-weight:600;color:var(--text2)">${fmtE(m.valore)}</span>
+            </div>
+          </div>
+        `;}).join('')}
+      </div>
+    </div>`;
+  })()}
   ${magAttivi.length===0?'':`<div class="card">
     <div class="chd"><div class="ct">Efficienza per Materiale</div>
       <div style="font-size:11px;color:var(--text3)">Basata sulle lavorazioni registrate</div>
