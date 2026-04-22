@@ -557,7 +557,7 @@ function showLogin(){
   document.getElementById('app').innerHTML=`
     <div class="login-screen">
       <div class="login-logo">METALTRACK</div>
-      <div class="login-sub">WASTE MANAGER v4.3.3</div>
+      <div class="login-sub">WASTE MANAGER v4.3.4</div>
       <div class="login-card">
         <div class="login-title">🔒 INSERISCI PIN</div>
         <div class="pin-dots" id="login-dots">
@@ -603,7 +603,7 @@ const CHK_SVG='<svg width="12" height="12" viewBox="0 0 24 24" fill="none" strok
 // ═══ STATE ═══
 let S={tab:'dashboard',mob:false,modal:null,magEsaOpen:false};
 let mag=[],lav=[],snaps=[],sfRiutil=[],storici=[],materiali=[];
-let appConfig={pin:'1234'};
+let appConfig={pin:'1234',pinDel:'1234'};
 
 // Lista materiali standard precaricata alla prima apertura
 const MATERIALI_STD=[
@@ -638,7 +638,7 @@ function load(){
         if(!localStorage.getItem(keys[i]))localStorage.setItem(keys[i],v);
       }
     });
-    // Migrazione v4.3.3: ricalcolo psot con logica uniforme
+    // Migrazione v4.3.4: ricalcolo psot con logica uniforme
     // Vecchio: psot = sfu ? pp : pp+psf   -->   Nuovo: psot = (sfu && psf>0) ? max(0,pp-psf) : pp
     // Flag persistente per non ripetere la migrazione
     if(!localStorage.getItem('st4_mig43')){
@@ -651,7 +651,7 @@ function load(){
       localStorage.setItem('st4_mig43','1');
       if(migrated>0){
         localStorage.setItem('st4l',JSON.stringify(lav));
-        console.log(`[v4.3.3] Migrate ${migrated} lavorazioni: psot ricalcolato con nuova logica.`);
+        console.log(`[v4.3.4] Migrate ${migrated} lavorazioni: psot ricalcolato con nuova logica.`);
       }
     }
   }catch(e){mag=[];lav=[];snaps=[];sfRiutil=[];storici=[];materiali=MATERIALI_STD.map(m=>({...m}));}
@@ -780,7 +780,7 @@ function render(){
   if(!appUnlocked){showLogin();return;}
   document.getElementById('app').innerHTML=`
     <nav class="nav">
-      <div class="nav-brand">METALTRACK <span>/ v4.3.3</span></div>
+      <div class="nav-brand">METALTRACK <span>/ v4.3.4</span></div>
       <div class="nav-tabs">
         ${TB('dashboard','📊 Dashboard')}${TB('magazzino','📦 Magazzino')}${TB('sfridi','♻️ Sfridi')}${TB('lavorazione','⚙️ Lavorazione')}${TB('commesse','📋 Commesse')}${TB('storico','📅 Storico')}${TB('guida','📖 Guida')}
       </div>
@@ -792,7 +792,7 @@ function render(){
       ${TB('dashboard','📊 Dashboard')}${TB('magazzino','📦 Magazzino')}${TB('sfridi','♻️ Sfridi')}${TB('lavorazione','⚙️ Nuova Lavorazione')}${TB('commesse','📋 Commesse')}${TB('storico','📅 Storico')}${TB('guida','📖 Guida')}
     </div>
     <main class="main fade" id="pg"></main>
-    <footer class="footer">METALTRACK v4.3.3 — PWA · sync automatico Appwrite · protetto da PIN</footer>
+    <footer class="footer">METALTRACK v4.3.4 — PWA · sync automatico Appwrite · protetto da PIN</footer>
     ${S.modal?rMod():''}`;
   renderPage();
 }
@@ -814,11 +814,21 @@ function renderPage(){
 function TB(id,l){return`<button class="ntb ${S.tab===id?'active':''}" onclick="S.tab='${id}';S.mob=false;render()">${l}</button>`;}
 
 // ═══ PIN SYSTEM ═══
-let pinState={digits:'',callback:null,label:'Inserisci PIN'};
-function askPin(label,cb){pinState={digits:'',callback:cb,label};S.modal={type:'pin'};render();}
+// Due PIN distinti:
+//  - appConfig.pin    → PIN di ACCESSO (login iniziale all'app)
+//  - appConfig.pinDel → PIN di ELIMINAZIONE (richiesto per cancellare commesse, sfridi, storico)
+// askPin(label, cb, which?) — which: 'del' (default) oppure 'access'
+let pinState={digits:'',callback:null,label:'Inserisci PIN',which:'del'};
+function askPin(label,cb,which){
+  pinState={digits:'',callback:cb,label:label||'Inserisci PIN',which:which||'del'};
+  S.modal={type:'pin'};render();
+}
 function rPinModal(){
+  const hintTxt = pinState.which==='access' ? '🔑 PIN di accesso' : '🗑 PIN di eliminazione';
+  const hintCol = pinState.which==='access' ? 'var(--blue)' : 'var(--red)';
   return`<div class="mo"><div class="md fade" onclick="event.stopPropagation()" style="max-width:320px">
     <div class="md-t">${esc(pinState.label)}</div>
+    <div style="text-align:center;font-size:11px;font-family:'Space Mono',monospace;color:${hintCol};margin-bottom:10px;letter-spacing:.6px">${hintTxt}</div>
     <div class="pin-dots">
       ${[0,1,2,3].map(i=>`<div class="pin-dot ${i<pinState.digits.length?'filled':''}" id="pd${i}"></div>`).join('')}
     </div>
@@ -838,7 +848,9 @@ window.pinKey=function(k){
   [0,1,2,3].forEach(i=>{const d=document.getElementById('pd'+i);if(d)d.className='pin-dot'+(i<pinState.digits.length?' filled':'');});
   if(pinState.digits.length===4){
     setTimeout(()=>{
-      if(pinState.digits===appConfig.pin){S.modal=null;pinState.callback();}
+      // Confronta contro il PIN richiesto (access o del)
+      const targetPin = pinState.which==='access' ? appConfig.pin : (appConfig.pinDel||appConfig.pin);
+      if(pinState.digits===targetPin){S.modal=null;pinState.callback();}
       else{pinState.digits='';const err=document.getElementById('pin-err');if(err)err.textContent='PIN errato. Riprova.';[0,1,2,3].forEach(i=>{const d=document.getElementById('pd'+i);if(d)d.className='pin-dot';});}
     },200);
   }
@@ -1055,7 +1067,7 @@ function rMag(){
   const renderSection=(items,emptyMsg)=>items.length===0
     ? `<div class="empty" style="padding:20px 10px">${emptyMsg}</div>`
     : `<div class="mag-cards"><table>
-        <thead><tr><th>Colata</th><th>Materiale</th><th>Tipo</th><th>Dimensioni mm</th><th>Sup m²</th><th>Vol m³</th><th>Dens kg/m³</th><th>Peso kg</th><th>€/kg</th><th>Valore</th><th>Residuo kg</th><th>Data Ins.</th><th>Data Esaur.</th><th>Stato</th><th>Sfrido ♻️</th><th>Sfrido 🗑</th><th></th></tr></thead>
+        <thead><tr><th>Colata</th><th>Partita</th><th>Materiale</th><th>Tipo</th><th>Dimensioni mm</th><th>Sup m²</th><th>Vol m³</th><th>Dens kg/m³</th><th>Peso kg</th><th>€/kg</th><th>Valore</th><th>Residuo kg</th><th>Data Ins.</th><th>Data Esaur.</th><th>Stato</th><th>Sfrido ♻️</th><th>Sfrido 🗑</th><th></th></tr></thead>
         <tbody>${items.map(({m,i})=>mRow(m,i)).join('')}</tbody></table></div>`;
 
   return`
@@ -1123,6 +1135,7 @@ function mRow(m,i){
   const sfPersoPeso=sfProd.filter(l=>!l.sfu).reduce((a,l)=>a+l.psf,0);
   return`<tr class="${m.esa?'exh':''}">
     <td data-l="Colata"><input class="ie ie-w" value="${esc(m.col||'')}" onchange="mag[${i}].col=this.value;save();renderPage()"></td>
+    <td data-l="Partita"><input class="ie ie-w" value="${esc(m.part||'')}" onchange="mag[${i}].part=this.value;save();renderPage()" placeholder="—"></td>
     <td data-l="Materiale"><input class="ie ie-w" value="${esc(m.mat||'')}" onchange="mag[${i}].mat=this.value;save();renderPage()"></td>
     <td data-l="Tipo"><select class="ie" onchange="chTipo(${i},this.value)"><option value="lamiera" ${m.tipo==='lamiera'?'selected':''}>Lamiera</option><option value="tondo" ${m.tipo==='tondo'?'selected':''}>Tondo</option></select></td>
     <td data-l="Dim mm">${m.tipo==='lamiera'
@@ -1157,11 +1170,47 @@ window.toggleEsaManuale=function(i){
     m.esa=false;
     m.dataEsaurimento='';
     m._esaManuale=false;
+    // Rimuovi l'eventuale sfrido perso "manuale da esaurimento" collegato a questo mag
+    // (riconoscibile da flag _fromEsa e sid === m.id)
+    const sfEsaIdx = lav.findIndex(l=>l._sfPersoManuale && l._fromEsa && l.sid===m.id);
+    if(sfEsaIdx>=0) lav.splice(sfEsaIdx,1);
     recalc(); // ricalcola residuo corretto dalle lavorazioni
   } else {
     // Esaurimento manuale
+    // Se c'è residuo positivo, genera automaticamente un record "Sfrido Perso manuale"
+    // in modo che il peso finisca nelle sezioni Sfridi Persi e Dashboard "Sfrido perso totale".
+    if(m.res>0.001){
+      const pesoPerso=+m.res.toFixed(3);
+      lav.push({
+        id:uid(),
+        date:new Date().toLocaleString('it-IT'),
+        cli:'(sistema)',
+        com:'Esaurimento manuale',
+        sid:m.id,
+        sfSid:null,
+        mat:m.mat,
+        col:m.col,
+        part:m.part||'',
+        tipo:m.tipo,
+        pdesc:'Residuo esaurito manualmente',
+        sup:0,vol:0,
+        pp:0,
+        sf:{tipo:'esaurimento',peso:pesoPerso},
+        sfu:false,
+        psf:pesoPerso,
+        psot:pesoPerso,  // tutto il residuo esce dal magazzino
+        ckg:m.ckg||0,
+        ctot:0,
+        dens:m.dens||7850,
+        spessore:m.tipo==='lamiera'?m.dim.t:m.dim.de,
+        fromSfrido:false,
+        _sfPersoManuale:true,
+        _fromEsa:true     // flag: creato automaticamente da esaurimento manuale
+      });
+    }
     m.esa=true;
     m._esaManuale=true;
+    m.res=0;
     if(!m.dataEsaurimento)m.dataEsaurimento=new Date().toLocaleDateString('it-IT');
   }
   save();render();
@@ -1413,8 +1462,8 @@ function rLav(){
   return`<div class="card"><div class="chd"><div class="ct">Nuova Lavorazione</div></div>
     <div class="fg">
       <div class="fi s2"><label class="fl">Materiale / Sfrido sorgente</label><select class="fx" id="lv_s" onchange="lvU()"><option value="">— Seleziona —</option>
-        ${la.length?`<optgroup label="── LAMIERE MAGAZZINO ──">${la.map(m=>`<option value="mag:${m.id}">[L] ${esc(m.mat)} sp.${m.dim.t}mm — ${esc(m.col)} (${fmt(m.res,1)}kg)</option>`).join('')}</optgroup>`:''}
-        ${to.length?`<optgroup label="── TONDI MAGAZZINO ──">${to.map(m=>`<option value="mag:${m.id}">[T] ${esc(m.mat)} Ø${m.dim.de}mm — ${esc(m.col)} (${fmt(m.res,1)}kg)</option>`).join('')}</optgroup>`:''}
+        ${la.length?`<optgroup label="── LAMIERE MAGAZZINO ──">${la.map(m=>`<option value="mag:${m.id}">[L] ${esc(m.mat)} sp.${m.dim.t}mm — Col:${esc(m.col||'—')}${m.part?' · Part:'+esc(m.part):''} (${fmt(m.res,1)}kg)</option>`).join('')}</optgroup>`:''}
+        ${to.length?`<optgroup label="── TONDI MAGAZZINO ──">${to.map(m=>`<option value="mag:${m.id}">[T] ${esc(m.mat)} Ø${m.dim.de}mm — Col:${esc(m.col||'—')}${m.part?' · Part:'+esc(m.part):''} (${fmt(m.res,1)}kg)</option>`).join('')}</optgroup>`:''}
         ${sfLa.length?`<optgroup label="── ♻️ SFRIDI LAMIERA ──">${sfLa.map(s=>`<option value="sf:${s.id}">♻️[SfL] ${esc(s.mat)} ${esc(s.desc||'')} (${fmt(s.peso,1)}kg)</option>`).join('')}</optgroup>`:''}
         ${sfTo.length?`<optgroup label="── ♻️ SFRIDI TONDO ──">${sfTo.map(s=>`<option value="sf:${s.id}">♻️[SfT] ${esc(s.mat)} ${esc(s.desc||'')} (${fmt(s.peso,1)}kg)</option>`).join('')}</optgroup>`:''}
       </select></div>
@@ -1463,7 +1512,9 @@ window.lvU=function(){
       </select>
     </div>` : '';
 
-  dd.innerHTML=`<div class="sinfo">${sh._isSf?'<span style="color:var(--blue);font-weight:700">♻️ SFRIDO</span> — ':''}<strong>${esc(sh.mat)}</strong> — ${info}${spInfo} | ρ${sh.dens} kg/m³ | Disp: <strong style="color:var(--green)">${fmt(sh._resDisp,3)} kg</strong></div>
+  // Info tag: Colata + Partita, evidente per distinguere lamiere simili
+  const idTag = !sh._isSf ? `<span style="display:inline-block;padding:1px 7px;border-radius:10px;background:var(--bg4);color:var(--text);font-family:'Space Mono',monospace;font-size:10px;margin-right:6px">Col:${esc(sh.col||'—')}${sh.part?' · Part:'+esc(sh.part):''}</span>` : '';
+  dd.innerHTML=`<div class="sinfo">${sh._isSf?'<span style="color:var(--blue);font-weight:700">♻️ SFRIDO</span> — ':''}${idTag}<strong>${esc(sh.mat)}</strong> — ${info}${spInfo} | ρ${sh.dens} kg/m³ | Disp: <strong style="color:var(--green)">${fmt(sh._resDisp,3)} kg</strong></div>
     <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Dimensioni lamiera da tagliare per il pezzo</div>
     <div class="fg">${formaSel}</div>
     <div class="fg" id="lv_dims"></div>
@@ -1531,7 +1582,7 @@ window.lvC=function(){
   }
   $('#lvPI').innerHTML=`<div class="sinfo"><div class="sr"><span>Lamiera tagliata:</span><span>${desc}</span></div><div class="sr"><span>Sup:</span><span>${fmt(sup,4)} m²</span></div><div class="sr"><span>Vol:</span><span>${fmt(vol,6)} m³</span></div><div class="sr"><span><strong>Peso lamiera tagliata:</strong></span><span><strong style="color:var(--accent)">${fmt(peso,3)} kg</strong></span></div></div>${alertHtml}${sfSuggestHtml}`;
   const sv=$('#lvS');sv.style.display='block';
-  // v4.3.3: checkbox "🗑 Cestina tutto sfrido" compare SOLO quando lo sfrido NON è riutilizzabile.
+  // v4.3.4: checkbox "🗑 Cestina tutto sfrido" compare SOLO quando lo sfrido NON è riutilizzabile.
   // Se attiva, nasconde i campi forma/dimensioni e lo sfrido = residuo rimanente della sorgente.
   sv.innerHTML=`<div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin:12px 0 8px">Sfrido generato</div>
     <div class="ck on" id="ck_sf"><div class="ck-b">${CHK_SVG}</div><div style="font-size:12px">C'è sfrido</div></div>
@@ -1705,7 +1756,7 @@ function gLD(){
   }
   // sfu: riutilizzabile solo se NON è "cestina tutto" e se la checkbox è attiva
   const sfu = !trashAll && hsf && document.getElementById('ck_su')?.classList?.contains('on');
-  // LOGICA UNIFORME v4.3.3.1:
+  // LOGICA UNIFORME v4.3.4.1:
   // La quantità effettivamente "prelevata" dalla sorgente (magazzino o sfrido) è sempre pp
   // — perché pp è il peso materiale che esce dalla lamiera/sfrido origine per fare la
   // lavorazione (include al suo interno il peso del pezzo prodotto + quello che diventa sfrido).
@@ -1738,7 +1789,7 @@ window.subLav=function(){
     cli:d.cl,com:d.co,
     sid:d.sh._isSf?null:d.sh.id,
     sfSid:d.sh._isSf?d.sh._sfId:null,
-    mat:d.sh.mat,col:d.sh.col,tipo:d.sh.tipo,
+    mat:d.sh.mat,col:d.sh.col,part:d.sh.part||'',tipo:d.sh.tipo,
     pdesc:d.desc,sup:d.sup,vol:d.vol,pp:d.pp,
     sf:d.sfInfo,sfu:d.sfu,psf:d.psf,psot:d.psot,
     ckg:d.sh.ckg,ctot:+(d.pp*d.sh.ckg).toFixed(2),
@@ -1762,7 +1813,7 @@ window.subLav=function(){
     });
   }
   recalc();
-  // v4.3.3: se è stato attivato "Cestina tutto", esaurisce automaticamente la sorgente
+  // v4.3.4: se è stato attivato "Cestina tutto", esaurisce automaticamente la sorgente
   // senza chiedere conferma (l'utente ha già espresso la volontà con la checkbox).
   // Altrimenti, nessun prompt — l'utente può esaurire manualmente dal magazzino.
   if(d.trashAll){
@@ -1789,10 +1840,10 @@ function rCom(){
   return`<div class="card"><div class="chd"><div class="ct">Registro Lavorazioni</div>
     ${lavReali.length?`<button class="btn btn-g btn-s" onclick="expCSV()">📥 CSV</button>`:''}</div>
     ${r.length===0?'<div class="empty">Nessuna lavorazione registrata</div>':`<div class="tw"><table class="mob-cards">
-    <thead><tr><th>Data</th><th>Cliente</th><th>Commessa</th><th>Materiale</th><th>Colata</th><th>Pezzo</th><th>Peso kg</th><th>Sfrido kg</th><th>Tipo sfrido</th><th>Sottratto</th><th>€/kg</th><th>Costo pezzo</th><th>Costo cliente</th><th>Margine sfrido</th><th></th></tr></thead>
+    <thead><tr><th>Data</th><th>Cliente</th><th>Commessa</th><th>Materiale</th><th>Colata</th><th>Partita</th><th>Pezzo</th><th>Peso kg</th><th>Sfrido kg</th><th>Tipo sfrido</th><th>Sottratto</th><th>€/kg</th><th>Costo pezzo</th><th>Costo cliente</th><th>Margine sfrido</th><th></th></tr></thead>
     <tbody>${r.map(l=>{
       const ri=lav.findIndex(x=>x.id===l.id);
-      // LOGICA v4.3.3: il cliente paga sempre la lamiera intera tagliata (pp × €/kg)
+      // LOGICA v4.3.4: il cliente paga sempre la lamiera intera tagliata (pp × €/kg)
       const costoCliente=+((l.pp||0)*(l.ckg||0)).toFixed(2);
       const margineSfrido=l.sfu&&l.psf>0?+((l.psf||0)*(l.ckg||0)).toFixed(2):0;
       return`<tr>
@@ -1801,6 +1852,7 @@ function rCom(){
       <td data-l="Commessa"><input class="ie ie-w" value="${esc(l.com)}" onchange="lav[${ri}].com=this.value;save();renderPage()"></td>
       <td data-l="Materiale"><input class="ie ie-w" value="${esc(l.mat)}" onchange="lav[${ri}].mat=this.value;save();renderPage()"></td>
       <td data-l="Colata"><input class="ie ie-w" value="${esc(l.col||'')}" onchange="lav[${ri}].col=this.value;save();renderPage()"></td>
+      <td data-l="Partita"><input class="ie ie-w" value="${esc(l.part||'')}" onchange="lav[${ri}].part=this.value;save();renderPage()" placeholder="—"></td>
       <td data-l="Pezzo" style="font-size:10px">${esc(l.pdesc)}</td>
       <td data-l="Peso kg"><input class="ie" type="number" value="${fmt(l.pp,3)}" onchange="lav[${ri}].pp=+this.value;lav[${ri}].ctot=+(lav[${ri}].pp*(lav[${ri}].ckg||0)).toFixed(2);lav[${ri}].psot=lav[${ri}].sfu&&lav[${ri}].psf>0?Math.max(0,lav[${ri}].pp-(lav[${ri}].psf||0)):lav[${ri}].pp;recalc();save();renderPage()" style="color:var(--accent)"></td>
       <td data-l="Sfrido kg"><input class="ie" type="number" value="${fmt(l.psf||0,3)}" onchange="lav[${ri}].psf=+this.value;lav[${ri}].psot=lav[${ri}].sfu&&lav[${ri}].psf>0?Math.max(0,lav[${ri}].pp-lav[${ri}].psf):lav[${ri}].pp;recalc();save();renderPage()"></td>
@@ -2058,7 +2110,7 @@ window.delStorico=function(id){
 // ═══ GUIDA ═══
 function rGuida(){
   return`<div class="card">
-    <div class="g-h1">📖 Guida MetalTrack v4.3.3</div>
+    <div class="g-h1">📖 Guida MetalTrack v4.3.4</div>
     <p class="g-p">MetalTrack è un gestionale per il monitoraggio di lamiere, tondi, sfridi e lavorazioni. I dati sono salvati <strong>sia in locale</strong> (browser) <strong>sia su database cloud</strong> (Appwrite). Il sync avviene automaticamente.</p>
     <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">
       <button class="btn btn-p" onclick="pdfGuida()">📄 Scarica Guida PDF</button>
@@ -2087,7 +2139,7 @@ function rGuida(){
     </div>
 
     <div class="g-section">
-      <div class="g-h2">🧪 Elenco Materiali (Nuovo v4.3.3)</div>
+      <div class="g-h2">🧪 Elenco Materiali (Nuovo v4.3.4)</div>
       <p class="g-p">L'app gestisce un <strong>elenco di materiali con densità preimpostate</strong>. Quando aggiungi una lamiera o un tondo, lo selezioni da questa lista: il nome e la densità vengono compilati automaticamente.</p>
       <div class="g-kv"><span>Materiali standard</span><span>Acciaio, Alluminio, Rame, Ottone, Titanio, Ghisa (precaricati)</span></div>
       <div class="g-kv"><span>Aggiungere materiale</span><span>Dropdown → "⚙️ Gestisci elenco materiali…"</span></div>
@@ -2114,11 +2166,11 @@ function rGuida(){
       <div class="g-note">ℹ️ Gli sfridi Riutilizzabili compaiono nel selettore materiali della sezione Lavorazione e possono essere usati come sorgente per nuovi pezzi.</div>
     </div>
     <div class="g-section">
-      <div class="g-h2">🗑 Sfridi Persi (Aggiornato v4.3.3)</div>
+      <div class="g-h2">🗑 Sfridi Persi (Aggiornato v4.3.4)</div>
       <p class="g-p">Gli sfridi non riutilizzabili sono materiale scartato. Puoi aggiungerli in due modi:</p>
       <div class="g-step"><div class="g-num">1</div><div class="g-step-txt">Durante una <strong>lavorazione</strong>: scegli sfrido "Perso" — viene scalato automaticamente</div></div>
       <div class="g-step"><div class="g-num">2</div><div class="g-step-txt"><strong>Manualmente</strong> in kg: pulsante "+ Aggiungi Sfrido Perso" nella sezione Sfridi</div></div>
-      <div class="g-warn">⚠️ <strong>Novità v4.3.3:</strong> lo sfrido perso manuale ora richiede OBBLIGATORIAMENTE la selezione della lamiera/tondo sorgente e viene scalato dal residuo. Se il materiale sorgente si esaurisce, sparisce automaticamente dal selettore delle lavorazioni.</div>
+      <div class="g-warn">⚠️ <strong>Novità v4.3.4:</strong> lo sfrido perso manuale ora richiede OBBLIGATORIAMENTE la selezione della lamiera/tondo sorgente e viene scalato dal residuo. Se il materiale sorgente si esaurisce, sparisce automaticamente dal selettore delle lavorazioni.</div>
       <div class="g-tip">💡 Entrambi i tipi compaiono nella sezione <strong>Sfridi Persi</strong> con un badge che indica l'origine (Manuale/Lavorazione). Gli sfridi persi manuali sono eliminabili con PIN e ripristinano il residuo del magazzino.</div>
     </div>
     <div class="g-section">
@@ -2308,6 +2360,7 @@ function rAdd(){
     <div class="md-t">Aggiungi Materiale</div>
     <div class="fg">
       <div class="fi"><label class="fl">N° Colata</label><input class="fx" id="am_c" placeholder="COL-001"></div>
+      <div class="fi"><label class="fl">Partita <span style="color:var(--text3);font-weight:400">(da bolla scarico)</span></label><input class="fx" id="am_p" placeholder="es. P-2024-07"></div>
       <div class="fi s2"><label class="fl">Materiale</label>
         <select class="fx" id="am_mat_sel" onchange="amMatSelChange()">
           <option value="">— Seleziona dalla lista —</option>
@@ -2363,6 +2416,7 @@ window.amTC=function(){
 }
 window.addM=function(){
   const c=$('#am_c').value;
+  const part=$('#am_p')?.value||'';
   const matSel=$('#am_mat_sel').value;
   // Se è selezionato un materiale dalla lista, usa quel nome; altrimenti usa il custom
   let m='';
@@ -2379,7 +2433,7 @@ window.addM=function(){
   let dim;
   if(t==='lamiera')dim={l:+($('#am_l')?.value||0),w:+($('#am_w')?.value||0),t:+($('#am_s')?.value||0)};
   else dim={de:+($('#am_de')?.value||0),lu:+($('#am_lu')?.value||0)};
-  const it={id:uid(),col:c,mat:m,tipo:t,dim,sup:0,vol:0,dens:d,peso:0,ckg:k,res:0,esa:false,
+  const it={id:uid(),col:c,part,mat:m,tipo:t,dim,sup:0,vol:0,dens:d,peso:0,ckg:k,res:0,esa:false,
     dataIns:di?new Date(di).toLocaleDateString('it-IT'):'',dataEsaurimento:''};
   calcItem(it);it.res=it.peso;mag.push(it);save();S.modal=null;render();
 }
@@ -2467,13 +2521,40 @@ function rSnaps(){
   </div></div>`;
 }
 
-// ═══ CAMBIO PIN ═══
-let cpState={step:'old',old:'',new1:'',new2:'',err:''};
+// ═══ CAMBIO PIN (accesso o eliminazione) ═══
+// Flusso: select → old → new1 → new2
+let cpState={step:'select',target:'',old:'',new1:'',new2:'',err:''};
 function rChangePinModal(){
-  const stepLabel={old:'Inserisci PIN attuale',new1:'Inserisci nuovo PIN (4 cifre)',new2:'Conferma nuovo PIN'}[cpState.step];
+  // Step 1: scelta target
+  if(cpState.step==='select'){
+    return`<div class="mo" onclick="S.modal=null;cpState={step:'select',target:'',old:'',new1:'',new2:'',err:''};render()"><div class="md fade" onclick="event.stopPropagation()" style="max-width:380px">
+      <div class="md-t">🔑 Cambia PIN — scegli quale</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.5">L'app usa <strong>due PIN distinti</strong>. Indica chiaramente quello che vuoi cambiare:</div>
+      <button class="btn" style="width:100%;margin-bottom:10px;justify-content:flex-start;gap:10px;padding:14px;border:1px solid rgba(59,130,246,.35);background:rgba(59,130,246,.08)" onclick="cpStart('access')">
+        <div style="font-size:18px">🔓</div>
+        <div style="text-align:left;flex:1">
+          <div style="font-weight:700;color:var(--blue);font-size:13px">PIN di ACCESSO</div>
+          <div style="font-size:10px;color:var(--text3);font-weight:400">Richiesto all'apertura dell'app (schermata di login)</div>
+        </div>
+      </button>
+      <button class="btn" style="width:100%;margin-bottom:6px;justify-content:flex-start;gap:10px;padding:14px;border:1px solid rgba(239,68,68,.35);background:rgba(239,68,68,.08)" onclick="cpStart('del')">
+        <div style="font-size:18px">🗑</div>
+        <div style="text-align:left;flex:1">
+          <div style="font-weight:700;color:var(--red);font-size:13px">PIN di ELIMINAZIONE</div>
+          <div style="font-size:10px;color:var(--text3);font-weight:400">Richiesto per cancellare commesse, sfridi, snapshot, righe magazzino</div>
+        </div>
+      </button>
+      <div style="text-align:right;margin-top:14px"><button class="btn btn-g" onclick="S.modal=null;cpState={step:'select',target:'',old:'',new1:'',new2:'',err:''};render()">Annulla</button></div>
+    </div></div>`;
+  }
+  // Step 2-4: PIN input
+  const targetLabel = cpState.target==='access' ? 'PIN di ACCESSO' : 'PIN di ELIMINAZIONE';
+  const targetCol   = cpState.target==='access' ? 'var(--blue)' : 'var(--red)';
+  const stepLabel={old:'Inserisci PIN attuale',new1:'Inserisci NUOVO PIN (4 cifre)',new2:'Conferma il nuovo PIN'}[cpState.step];
   const cur=cpState.step==='old'?cpState.old:cpState.step==='new1'?cpState.new1:cpState.new2;
   return`<div class="mo"><div class="md fade" onclick="event.stopPropagation()" style="max-width:320px">
-    <div class="md-t">🔑 Cambia PIN</div>
+    <div class="md-t">🔑 Cambia ${targetLabel}</div>
+    <div style="text-align:center;font-size:11px;font-family:'Space Mono',monospace;color:${targetCol};margin-bottom:8px;letter-spacing:.6px">${cpState.target==='access'?'🔓 Login app':'🗑 Eliminazioni'}</div>
     <div style="text-align:center;font-size:12px;color:var(--text2);margin-bottom:4px">${esc(stepLabel)}</div>
     <div class="pin-dots">${[0,1,2,3].map(i=>`<div class="pin-dot ${i<cur.length?'filled':''}" id="cpd${i}"></div>`).join('')}</div>
     <div id="cp-err" style="text-align:center;color:var(--red);font-size:12px;min-height:18px;margin-bottom:6px">${esc(cpState.err)}</div>
@@ -2483,22 +2564,42 @@ function rChangePinModal(){
       <button class="pin-key" onclick="cpKey('0')">0</button>
       <button class="pin-key del" onclick="cpKey('⌫')">⌫</button>
     </div>
-    <div style="text-align:center;margin-top:14px"><button class="btn btn-g" onclick="S.modal=null;cpState={step:'old',old:'',new1:'',new2:'',err:''};render()">Annulla</button></div>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="btn btn-g" style="flex:1" onclick="cpState={step:'select',target:'',old:'',new1:'',new2:'',err:''};render()">← Indietro</button>
+      <button class="btn btn-g" style="flex:1" onclick="S.modal=null;cpState={step:'select',target:'',old:'',new1:'',new2:'',err:''};render()">Annulla</button>
+    </div>
   </div></div>`;
 }
+window.cpStart=function(target){
+  cpState={step:'old',target:target,old:'',new1:'',new2:'',err:''};
+  render();
+};
 window.cpKey=function(k){
   const step=cpState.step;
+  if(step==='select')return;
   if(k==='⌫'){cpState[step]=cpState[step].slice(0,-1);}
   else if(cpState[step].length<4){cpState[step]+=k;}
   [0,1,2,3].forEach(i=>{const d=document.getElementById('cpd'+i);if(d)d.className='pin-dot'+(i<cpState[step].length?' filled':'');});
   if(cpState[step].length===4){
     setTimeout(()=>{
+      // Determina la chiave del PIN (access → 'pin', del → 'pinDel')
+      const pinKey = cpState.target==='access' ? 'pin' : 'pinDel';
+      const currentPin = appConfig[pinKey] || (pinKey==='pinDel' ? appConfig.pin : '1234');
       if(step==='old'){
-        if(cpState.old===appConfig.pin){cpState.step='new1';cpState.err='';render();}
+        if(cpState.old===currentPin){cpState.step='new1';cpState.err='';render();}
         else{cpState.old='';cpState.err='PIN attuale errato. Riprova.';render();}
-      }else if(step==='new1'){cpState.step='new2';cpState.err='';render();}
-      else if(step==='new2'){
-        if(cpState.new1===cpState.new2){appConfig.pin=cpState.new1;save();S.modal=null;cpState={step:'old',old:'',new1:'',new2:'',err:''};render();setTimeout(()=>alert('✅ PIN cambiato!'),100);}
+      }else if(step==='new1'){
+        cpState.step='new2';cpState.err='';render();
+      }else if(step==='new2'){
+        if(cpState.new1===cpState.new2){
+          appConfig[pinKey]=cpState.new1;
+          save();
+          const label = cpState.target==='access' ? 'PIN di ACCESSO' : 'PIN di ELIMINAZIONE';
+          S.modal=null;
+          cpState={step:'select',target:'',old:'',new1:'',new2:'',err:''};
+          render();
+          setTimeout(()=>alert('✅ '+label+' cambiato con successo!'),100);
+        }
         else{cpState.new2='';cpState.err='I PIN non coincidono.';render();}
       }
     },200);
@@ -2518,7 +2619,7 @@ window.pBolla=async function(id){
     doc.setTextColor(30);let y=52;
     doc.setFontSize(11);doc.setFont('helvetica','bold');doc.text('DATI COMMESSA',M,y);y+=8;
     doc.setFont('helvetica','normal');doc.setFontSize(10);
-    [['Cliente:',String(l.cli)],['Commessa:',String(l.com)],['Materiale:',String(l.mat)+' — Colata: '+String(l.col||'N/D')],['Tipo:',l.tipo==='lamiera'?'Lamiera':'Tondo']].forEach(([k,v])=>{
+    [['Cliente:',String(l.cli)],['Commessa:',String(l.com)],['Materiale:',String(l.mat)+' — Colata: '+String(l.col||'N/D')+(l.part?' · Partita: '+String(l.part):'')],['Tipo:',l.tipo==='lamiera'?'Lamiera':'Tondo']].forEach(([k,v])=>{
       doc.setFont('helvetica','bold');doc.text(k,M,y);doc.setFont('helvetica','normal');doc.text(v,M+40,y);y+=6;
     });
     y+=6;doc.setFont('helvetica','bold');doc.setFontSize(11);doc.text('DETTAGLIO',M,y);y+=4;
@@ -2531,7 +2632,7 @@ window.pBolla=async function(id){
     y=doc.lastAutoTable.finalY+12;if(y>260)y=260;
     doc.setDrawColor(180);doc.line(M,y+15,M+60,y+15);doc.line(W-M-60,y+15,W-M,y+15);
     doc.setFontSize(8);doc.setTextColor(120);doc.text('Firma Operatore',M,y+20);doc.text('Firma Magazziniere',W-M-60,y+20);
-    doc.setFontSize(7);doc.setTextColor(160);doc.text('Generato da MetalTrack v4.3.3',W/2,285,{align:'center'});
+    doc.setFontSize(7);doc.setTextColor(160);doc.text('Generato da MetalTrack v4.3.4',W/2,285,{align:'center'});
     doc.save('Bolla_'+String(l.com)+'_'+String(l.date).replace(/[\/\\ :]/g,'-')+'.pdf');
   }catch(e){alert('Errore PDF: '+e.message);}
 }
@@ -2607,7 +2708,7 @@ window.pdfGuida=async function(){
     // Cover
     doc.setFillColor(12,15,20);doc.rect(0,0,W,60,'F');
     doc.setTextColor(249,115,22);doc.setFontSize(28);doc.setFont('helvetica','bold');doc.text('METALTRACK',M,30);
-    doc.setFontSize(12);doc.setTextColor(155,163,181);doc.text('Guida Utente - Waste Manager v4.3.3',M,42);
+    doc.setFontSize(12);doc.setTextColor(155,163,181);doc.text('Guida Utente - Waste Manager v4.3.4',M,42);
     doc.setFontSize(8);doc.setTextColor(107,115,133);doc.text('Generata il '+new Date().toLocaleDateString('it-IT'),M,54);
     y=75;
     const sections=[
@@ -2631,7 +2732,7 @@ window.pdfGuida=async function(){
         'Giallo fisso (IN CODA): il salvataggio e in attesa, verra completato appena possibile.',
         'Sync automatico: quando torni online, tutti i dati locali vengono inviati al cloud senza alcuna azione manuale.'
       ]},
-      {title:'4. Elenco Materiali (v4.3.3)',body:[
+      {title:'4. Elenco Materiali (v4.3.4)',body:[
         'L app gestisce un elenco di materiali con densita preimpostate. Quando aggiungi una lamiera o un tondo, lo selezioni da questa lista: il nome e la densita vengono compilati automaticamente.',
         'Materiali standard precaricati: Acciaio (7850), Alluminio (2700), Rame (8900), Ottone (8500), Titanio (4500), Ghisa (7200) kg/m3.',
         'Aggiungere materiali: dal dropdown "Materiale" scegli "Gestisci elenco materiali..." per aprire la tabella di gestione.',
@@ -2656,7 +2757,7 @@ window.pdfGuida=async function(){
         'b) Forma: Lamiera rettangolare (LxWxsp), Disco pieno (Destxsp), Anello (Dest/Dintxsp), Peso diretto (kg).',
         'Il peso viene calcolato automaticamente dalla forma. Gli sfridi disponibili appaiono nel selettore Lavorazione come opzione di materiale sorgente.'
       ]},
-      {title:'7. Sfridi Persi (v4.3.3)',body:[
+      {title:'7. Sfridi Persi (v4.3.4)',body:[
         'Sfridi non riutilizzabili, scartati. Si possono registrare in due modi:',
         '1) Durante una lavorazione: scegliendo opzione "Perso" - il peso viene scalato automaticamente dal magazzino sorgente.',
         '2) Manualmente: pulsante "+ Aggiungi Sfrido Perso". Richiede OBBLIGATORIAMENTE la scelta della lamiera/tondo sorgente e i kg di sfrido.',
@@ -2717,7 +2818,7 @@ window.pdfGuida=async function(){
     });
     doc.setFontSize(7);doc.setTextColor(160);
     for(let i=2;i<=doc.getNumberOfPages();i++){
-      doc.setPage(i);doc.text('MetalTrack v4.3.3 - Guida Utente',W/2,290,{align:'center'});
+      doc.setPage(i);doc.text('MetalTrack v4.3.4 - Guida Utente',W/2,290,{align:'center'});
       doc.text('Pag.'+(i-1)+'/'+(doc.getNumberOfPages()-1),W-M,290,{align:'right'});
     }
     doc.save('MetalTrack_Guida.pdf');
@@ -2728,11 +2829,11 @@ window.pdfGuida=async function(){
 window.expCSV=function(){
   const lavReali=lav.filter(l=>!l._sfPersoManuale&&!l.manuale);
   if(!lavReali.length)return;
-  let c='Data,Cliente,Commessa,Materiale,Colata,Pezzo,Peso_pezzo_kg,Sfrido_kg,Tipo_sfrido,Sottratto_kg,EuroKg,Costo_EUR,Costo_cliente_EUR\n';
+  let c='Data,Cliente,Commessa,Materiale,Colata,Partita,Pezzo,Peso_pezzo_kg,Sfrido_kg,Tipo_sfrido,Sottratto_kg,EuroKg,Costo_EUR,Costo_cliente_EUR\n';
   lavReali.forEach(l=>{
-    // v4.3.3: costo cliente = peso lamiera tagliata × €/kg
+    // v4.3.4: costo cliente = peso lamiera tagliata × €/kg
     const cc=+((l.pp||0)*(l.ckg||0)).toFixed(2);
-    c+=`${l.date},${l.cli},${l.com},${l.mat},${l.col||''},"${l.pdesc}",${fmt(l.pp,3)},${fmt(l.psf||0,3)},${l.sf?(l.sfu?'Riutilizzabile':'Perso'):'—'},${fmt(l.psot,3)},${fmt(l.ckg,2)},${fmt(l.ctot,2)},${fmt(cc,2)}\n`;
+    c+=`${l.date},${l.cli},${l.com},${l.mat},${l.col||''},${l.part||''},"${l.pdesc}",${fmt(l.pp,3)},${fmt(l.psf||0,3)},${l.sf?(l.sfu?'Riutilizzabile':'Perso'):'—'},${fmt(l.psot,3)},${fmt(l.ckg,2)},${fmt(l.ctot,2)},${fmt(cc,2)}\n`;
   });
   const b=new Blob([c],{type:'text/csv'});const a=document.createElement('a');
   a.href=URL.createObjectURL(b);a.download='metaltrack_'+new Date().toISOString().slice(0,10)+'.csv';a.click();
