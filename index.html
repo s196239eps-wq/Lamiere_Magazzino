@@ -105,9 +105,17 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;-we
 @media(max-width:820px){
   .nav-tabs{display:none}
   .ham{display:flex}
-  .nav{padding:0 12px;gap:6px}
-  .nav-brand{font-size:13px}
+  .nav{padding:0 10px;gap:4px}
+  .nav-brand{font-size:clamp(12px, 3.3vw, 14px);min-width:0;overflow:hidden;text-overflow:ellipsis}
+  /* Nasconde la versione nel brand su mobile per risparmiare spazio */
+  .nav-brand span{display:none}
+  /* conn-wrap: solo il pallino su mobile (testo già nascosto) */
+  .conn-wrap{margin-left:0}
   .conn-wrap span#conn-lbl{display:none}
+  /* Pulsante cambia PIN (🔑) compatto */
+  .nav .btn{padding:6px 10px;min-height:34px;font-size:13px;margin-left:auto !important}
+  /* Hamburger grande e sempre in fondo */
+  .ham{min-width:40px;min-height:40px;padding:6px;font-size:20px}
   .mmenu .ntb{width:100%;justify-content:flex-start;padding:14px 16px;font-size:15px;border-radius:8px;min-height:48px}
 }
 
