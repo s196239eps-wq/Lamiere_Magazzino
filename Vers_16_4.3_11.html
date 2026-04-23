@@ -1,0 +1,3079 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, shrink-to-fit=no">
+<meta name="description" content="MetalTrack — Gestione lamiere, sfridi e costi">
+<meta name="theme-color" content="#0C0F14">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="MetalTrack">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<title>MetalTrack — Waste Manager</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/appwrite@14.0.1/dist/iife/sdk.min.js"></script>
+<script>
+function getJsPDF(){
+  if(window.jspdf&&window.jspdf.jsPDF)return Promise.resolve(window.jspdf.jsPDF);
+  if(window.jsPDF)return Promise.resolve(window.jsPDF);
+  return new Promise((res,rej)=>{
+    let n=0;const t=setInterval(()=>{
+      if(window.jspdf&&window.jspdf.jsPDF){clearInterval(t);res(window.jspdf.jsPDF);}
+      else if(window.jsPDF){clearInterval(t);res(window.jsPDF);}
+      else if(++n>30){clearInterval(t);rej(new Error('jsPDF non caricata.'));}
+    },200);
+  });
+}
+</script>
+<style>
+:root{--bg:#0C0F14;--bg2:#141820;--bg3:#1A1F2B;--bg4:#222838;--border:#2A3040;--border2:#353D50;--text:#E8ECF4;--text2:#9BA3B5;--text3:#6B7385;--accent:#F97316;--accent2:#FB923C;--accent-bg:rgba(249,115,22,.08);--accent-border:rgba(249,115,22,.25);--green:#22C55E;--green-bg:rgba(34,197,94,.08);--red:#EF4444;--red-bg:rgba(239,68,68,.08);--blue:#3B82F6;--blue-bg:rgba(59,130,246,.08);--yellow:#EAB308;--radius:10px}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+#app{min-height:100dvh;display:flex;flex-direction:column}
+
+/* ── NAV ── */
+.nav{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 20px;display:flex;align-items:center;height:56px;position:sticky;top:0;z-index:100;gap:8px}
+.nav-brand{font-family:'Space Mono',monospace;font-size:14px;font-weight:700;color:var(--accent);letter-spacing:1px;white-space:nowrap;flex-shrink:0}
+.nav-brand span{color:var(--text3);font-weight:400}
+.nav-tabs{display:flex;gap:2px;margin-left:12px;flex:1;min-width:0}
+.ntb{padding:6px 12px;border-radius:20px;border:none;background:transparent;color:var(--text2);font:500 12px 'DM Sans',sans-serif;cursor:pointer;transition:.2s;display:flex;align-items:center;gap:5px;white-space:nowrap;flex-shrink:0;-webkit-tap-highlight-color:transparent}
+.ntb:hover{color:var(--text);background:var(--bg3)}
+.ntb.active{color:var(--accent);background:var(--accent-bg);font-weight:700}
+.ham{display:none;background:0;border:0;color:var(--text);cursor:pointer;padding:8px;flex-shrink:0;min-width:40px;min-height:40px;align-items:center;justify-content:center}
+/* ── CONNECTION DOT ── */
+.conn-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;transition:all .5s}
+.conn-dot.online{background:var(--green);box-shadow:0 0 6px rgba(34,197,94,.7)}
+.conn-dot.syncing{background:var(--yellow);box-shadow:0 0 6px rgba(234,179,8,.7);animation:pulse-y .9s infinite}
+.conn-dot.offline{background:var(--text3);box-shadow:none}
+.conn-dot.pending{background:var(--yellow);box-shadow:0 0 6px rgba(234,179,8,.5);animation:pulse-y 1.4s infinite}
+@keyframes pulse-y{0%,100%{opacity:1}50%{opacity:.25}}
+@keyframes rt-flash{0%{transform:scale(1);box-shadow:0 0 0 0 rgba(34,197,94,.7)}50%{transform:scale(1.6);box-shadow:0 0 0 6px rgba(34,197,94,0)}100%{transform:scale(1);box-shadow:0 0 6px rgba(34,197,94,.7)}}
+.conn-dot.rt-flash{animation:rt-flash .6s ease}
+.conn-wrap{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--text3);flex-shrink:0;font-family:'Space Mono',monospace;margin-left:4px;cursor:default}
+.mmenu{display:none;position:fixed;top:56px;left:0;right:0;background:var(--bg2);border-bottom:1px solid var(--border);padding:6px;z-index:99;flex-direction:column;gap:2px}
+.mmenu.open{display:flex}
+
+/* ── MOBILE NAV ── */
+@media(max-width:820px){
+  .nav-tabs{display:none}
+  .ham{display:flex}
+  .nav{padding:0 10px;gap:4px}
+  .nav-brand{font-size:clamp(12px, 3.3vw, 14px);min-width:0;overflow:hidden;text-overflow:ellipsis}
+  /* Nasconde la versione nel brand su mobile per risparmiare spazio */
+  .nav-brand span{display:none}
+  /* conn-wrap: solo il pallino su mobile (testo già nascosto) */
+  .conn-wrap{margin-left:0}
+  .conn-wrap span#conn-lbl{display:none}
+  /* Pulsante cambia PIN (🔑) compatto */
+  .nav .btn{padding:6px 10px;min-height:34px;font-size:13px;margin-left:auto !important}
+  /* Hamburger grande e sempre in fondo */
+  .ham{min-width:40px;min-height:40px;padding:6px;font-size:20px}
+  .mmenu .ntb{width:100%;justify-content:flex-start;padding:14px 16px;font-size:15px;border-radius:8px;min-height:48px}
+}
+
+/* ── LAYOUT ── */
+.main{flex:1;padding:20px;max-width:1400px;width:100%;margin:0 auto}
+@media(max-width:768px){.main{padding:10px 8px}}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:22px;margin-bottom:14px}
+@media(max-width:768px){.card{padding:12px 10px;margin-bottom:10px}}
+.chd{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px}
+@media(max-width:480px){.chd{gap:8px}}
+.ct{font-family:'Space Mono',monospace;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px}
+
+/* ── TABLES (desktop scroll, mobile card-list) ── */
+.tw{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{width:100%;border-collapse:collapse;font-size:11px}
+th{font-family:'Space Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:.8px;color:var(--text3);padding:8px 6px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap}
+td{padding:6px;border-bottom:1px solid var(--border);color:var(--text2);white-space:nowrap;vertical-align:middle}
+tr:hover td{background:var(--bg3)}
+tr.exh td{opacity:.4}
+
+/* ── MAGAZZINO: sempre card-view (mai scroll orizzontale) ── */
+/* Ogni riga magazzino diventa una card compatta con grid interna.
+   Si adatta automaticamente: 2 colonne su desktop large, 1 su mobile. */
+.mag-cards{overflow:visible}
+.mag-cards table{display:block}
+.mag-cards thead{display:none}
+.mag-cards tbody{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:10px}
+.mag-cards tbody tr{display:grid;grid-template-columns:repeat(2,1fr);gap:6px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:12px 14px;transition:border-color .15s}
+.mag-cards tbody tr:hover{border-color:var(--border2)}
+.mag-cards tbody tr.exh{opacity:.5}
+.mag-cards tbody td{display:flex;flex-direction:column;align-items:flex-start;gap:3px;padding:2px 0;border:none;font-size:11px;white-space:normal;min-height:auto;line-height:1.3}
+.mag-cards tbody td[data-l]::before{content:attr(data-l);font-family:'Space Mono',monospace;font-size:8.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);opacity:.8}
+.mag-cards tbody td[data-l=""]::before,.mag-cards tbody td:not([data-l])::before{display:none}
+/* Nascondi celle informative vuote: se contengono solo whitespace e non hanno input, non servono */
+.mag-cards tbody td[data-l="Sfrido ♻️"]:empty,
+.mag-cards tbody td[data-l="Sfrido 🗑"]:empty{display:none}
+/* Campi che occupano due colonne (più importanti) */
+.mag-cards tbody td[data-l="Materiale"],
+.mag-cards tbody td[data-l="Dim mm"]{grid-column:span 2}
+/* Ultima td = i bottoni azione, su tutta la riga, allineati a destra */
+.mag-cards tbody td:last-child{grid-column:span 2;flex-direction:row;justify-content:flex-end;gap:6px;margin-top:4px;padding-top:8px;border-top:1px solid var(--border)}
+.mag-cards tbody td:last-child::before{display:none}
+/* Input inline compatti dentro card */
+.mag-cards tbody td .ie,.mag-cards tbody td input.ie,.mag-cards tbody td select.ie{width:100%;max-width:100%;font-size:12px;padding:4px 6px;height:28px;text-align:left}
+.mag-cards tbody td .ie.ie-n{width:55px;display:inline-block}
+/* Mobile: singola colonna interna + font fluidi clamp() */
+@media(max-width:560px){
+  .mag-cards tbody{grid-template-columns:1fr}
+  .mag-cards tbody tr{grid-template-columns:1fr;padding:clamp(10px, 3vw, 14px)}
+  .mag-cards tbody td[data-l="Materiale"],
+  .mag-cards tbody td[data-l="Dim mm"]{grid-column:span 1}
+  .mag-cards tbody td:last-child{grid-column:span 1}
+  .mag-cards tbody td{font-size:clamp(11px, 3.2vw, 14px)}
+  .mag-cards tbody td[data-l]::before{font-size:clamp(9px, 2.4vw, 11px);letter-spacing:.6px}
+  .mag-cards tbody td .ie{font-size:clamp(13px, 3.6vw, 15px);height:clamp(34px, 9vw, 40px);padding:clamp(6px, 2vw, 8px) clamp(7px, 2.2vw, 10px)}
+  .mag-cards tbody td .ie.ie-n{width:clamp(52px, 14vw, 70px)}
+}
+
+/* ── COMMESSE: card-view a 3 colonne interne (mai scroll orizzontale) ── */
+/* Ogni lavorazione diventa una card compatta con griglia interna 3x. Le
+   informazioni principali (Cliente, Commessa, Materiale) sono in evidenza,
+   i dati economici a fondo card su una riga di "badge". */
+.com-cards{overflow:visible}
+.com-cards table{display:block}
+.com-cards thead{display:none}
+.com-cards tbody{display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:10px}
+.com-cards tbody tr{display:grid;grid-template-columns:repeat(3,1fr);gap:6px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:12px 14px;transition:border-color .15s}
+.com-cards tbody tr:hover{border-color:var(--border2)}
+.com-cards tbody td{display:flex;flex-direction:column;align-items:flex-start;gap:3px;padding:2px 0;border:none;font-size:11px;white-space:normal;min-height:auto;line-height:1.3}
+.com-cards tbody td[data-l]::before{content:attr(data-l);font-family:'Space Mono',monospace;font-size:8.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);opacity:.8}
+.com-cards tbody td[data-l=""]::before,.com-cards tbody td:not([data-l])::before{display:none}
+/* Data in evidenza in alto a sinistra, Cliente+Commessa in alto a destra */
+.com-cards tbody td[data-l="Data"]{grid-column:span 3;flex-direction:row;align-items:center;padding-bottom:6px;border-bottom:1px solid var(--border);margin-bottom:4px;font-family:'Space Mono',monospace;letter-spacing:.4px;color:var(--text2) !important}
+.com-cards tbody td[data-l="Data"]::before{margin-right:8px}
+/* Cliente e Commessa: una riga piena ciascuno (importanti, devono essere visibili) */
+.com-cards tbody td[data-l="Cliente"],
+.com-cards tbody td[data-l="Commessa"]{grid-column:span 3}
+/* Materiale + Colata + Partita: riga compressa a 3 colonne */
+/* (sono già default span 1) */
+/* Pezzo descrittivo: una riga piena */
+.com-cards tbody td[data-l="Pezzo"]{grid-column:span 3;color:var(--text3);font-size:10px;background:var(--bg4);padding:6px 8px;border-radius:4px;margin:2px 0}
+/* Peso / Sfrido / Tipo sfrido: riga a 3 colonne */
+/* Sottratto da solo */
+.com-cards tbody td[data-l="Sottratto"]{grid-column:span 3;background:var(--bg4);padding:6px 8px;border-radius:4px}
+/* Badge economici in basso (€/kg, Costo pezzo, Costo cliente, Margine): riga piena a 4 colonne */
+.com-cards tbody td[data-l="€/kg"],
+.com-cards tbody td[data-l="Costo pezzo"],
+.com-cards tbody td[data-l="Costo cliente"],
+.com-cards tbody td[data-l="Margine sfrido"]{grid-column:span 3;display:grid;grid-template-columns:repeat(4,1fr);gap:0}
+/* Raggruppa con wrapper invisibile: ogni td entra in un cell della griglia finale */
+/* Quest'approccio però è complesso. Semplifichiamo: li mettiamo 2 per riga */
+.com-cards tbody td[data-l="€/kg"]{grid-column:span 1;display:flex}
+.com-cards tbody td[data-l="Costo pezzo"]{grid-column:span 1;display:flex}
+.com-cards tbody td[data-l="Costo cliente"]{grid-column:span 1;display:flex}
+.com-cards tbody td[data-l="Margine sfrido"]{grid-column:span 3;display:flex}
+/* Azioni (PDF + delete): riga intera a destra */
+.com-cards tbody td:last-child{grid-column:span 3;flex-direction:row;justify-content:flex-end;gap:6px;margin-top:6px;padding-top:8px;border-top:1px solid var(--border)}
+.com-cards tbody td:last-child::before{display:none}
+/* Input inline compatti */
+.com-cards tbody td .ie,.com-cards tbody td input.ie,.com-cards tbody td select.ie{width:100%;max-width:100%;font-size:12px;padding:4px 6px;height:28px;text-align:left}
+/* Mobile: una colonna interna */
+@media(max-width:560px){
+  .com-cards tbody{grid-template-columns:1fr}
+  .com-cards tbody tr{grid-template-columns:1fr;padding:clamp(10px, 3vw, 14px)}
+  .com-cards tbody td[data-l="Data"],
+  .com-cards tbody td[data-l="Cliente"],
+  .com-cards tbody td[data-l="Commessa"],
+  .com-cards tbody td[data-l="Pezzo"],
+  .com-cards tbody td[data-l="Sottratto"],
+  .com-cards tbody td[data-l="€/kg"],
+  .com-cards tbody td[data-l="Costo pezzo"],
+  .com-cards tbody td[data-l="Costo cliente"],
+  .com-cards tbody td[data-l="Margine sfrido"],
+  .com-cards tbody td:last-child{grid-column:span 1}
+  .com-cards tbody td{font-size:clamp(11px, 3.2vw, 14px)}
+  .com-cards tbody td[data-l]::before{font-size:clamp(9px, 2.4vw, 11px);letter-spacing:.6px}
+  .com-cards tbody td[data-l="Pezzo"]{font-size:clamp(10px, 2.8vw, 12px)}
+  .com-cards tbody td .ie{font-size:clamp(13px, 3.6vw, 15px);height:clamp(34px, 9vw, 40px);padding:clamp(6px, 2vw, 8px) clamp(7px, 2.2vw, 10px)}
+}
+
+/* ── MOBILE CARD-LIST per altre tabelle (storico, sfridi) con font fluidi ── */
+@media(max-width:700px){
+  .mob-cards thead{display:none}
+  .mob-cards tbody tr{display:block;background:var(--bg3);border:1px solid var(--border);border-radius:8px;margin-bottom:10px;padding:clamp(10px, 3vw, 14px) clamp(12px, 3.5vw, 16px);position:relative}
+  .mob-cards tbody tr.exh{opacity:.45}
+  .mob-cards tbody td{display:flex;justify-content:space-between;align-items:center;padding:clamp(5px, 1.8vw, 8px) 0;border:none;border-bottom:1px solid var(--border);font-size:clamp(11px, 3.2vw, 14px);white-space:normal;min-height:clamp(34px, 9.5vw, 42px)}
+  .mob-cards tbody td:last-child{border-bottom:none;padding-top:10px;justify-content:flex-end;gap:6px}
+  .mob-cards tbody td[data-l]::before{content:attr(data-l);font-family:'Space Mono',monospace;font-size:clamp(9px, 2.5vw, 11px);text-transform:uppercase;letter-spacing:.6px;color:var(--text3);flex-shrink:0;margin-right:8px;min-width:clamp(78px, 22vw, 92px)}
+  .mob-cards tbody td[data-l]:empty{display:none}
+  .mob-cards tbody td .ie,
+  .mob-cards tbody td input.ie,
+  .mob-cards tbody td select.ie{width:100%;max-width:100%;font-size:clamp(13px, 3.6vw, 15px);padding:clamp(6px, 2vw, 8px) clamp(7px, 2.2vw, 10px);height:clamp(34px, 9vw, 40px)}
+}
+
+/* ── BUTTONS ── */
+.btn{padding:7px 16px;border-radius:7px;border:1px solid var(--border);font:600 12px 'DM Sans',sans-serif;cursor:pointer;transition:.15s;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;-webkit-tap-highlight-color:transparent;touch-action:manipulation;min-height:36px}
+.btn:disabled{opacity:.35;cursor:not-allowed}
+.btn-p{background:var(--accent);color:#fff;border-color:var(--accent)}.btn-p:hover:not(:disabled){background:var(--accent2)}
+.btn-g{background:0;color:var(--text2)}.btn-g:hover{color:var(--text);background:var(--bg3)}
+.btn-d{background:var(--red-bg);color:var(--red);border-color:rgba(239,68,68,.2)}
+.btn-s{padding:5px 11px;font-size:11px}
+.btn-bl{background:var(--blue-bg);color:var(--blue);border-color:rgba(59,130,246,.2)}
+.btn-gr{background:var(--green-bg);color:var(--green);border-color:rgba(34,197,94,.2)}
+@media(max-width:480px){
+  .btn{min-height:40px;padding:8px 14px;font-size:12px}
+  .btn-s{min-height:36px;padding:6px 12px;font-size:12px}
+}
+
+/* ── BADGES ── */
+.badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:10px;font-weight:600}
+.b-ok{background:var(--green-bg);color:var(--green)}.b-ex{background:var(--red-bg);color:var(--red)}
+
+/* ── INLINE EDITABLE INPUTS (tabelle desktop) ── */
+.ie{background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:3px 5px;border-radius:4px;font:11px 'DM Sans',sans-serif;width:58px;outline:0;text-align:right}
+.ie:focus{border-color:var(--accent)}.ie-w{width:78px}.ie-n{width:48px}
+select.ie{width:85px;text-align:left;cursor:pointer}
+
+/* ── FORM GRID ── */
+.fg{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;margin-bottom:14px}
+@media(max-width:600px){.fg{grid-template-columns:1fr}}
+@media(min-width:601px) and (max-width:900px){.fg{grid-template-columns:1fr 1fr}}
+.fi{display:flex;flex-direction:column;gap:4px}
+.fi.s2{grid-column:span 2}.fi.s3{grid-column:span 3}.fi.s1{grid-column:span 1}
+@media(max-width:600px){.fi.s2,.fi.s3{grid-column:span 1}}
+.fl{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);font-family:'Space Mono',monospace}
+.fx{padding:10px 12px;border-radius:7px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font:14px 'DM Sans',sans-serif;outline:0;transition:border .2s;width:100%;min-height:44px}
+.fx:focus{border-color:var(--accent)}
+select.fx{cursor:pointer}
+@media(max-width:600px){
+  .fx{font-size:16px;min-height:48px;padding:10px 14px} /* 16px previene zoom iOS */
+}
+
+/* ── CHECKBOXES ── */
+.ck{display:flex;align-items:center;gap:10px;padding:13px 16px;background:var(--bg3);border-radius:7px;cursor:pointer;margin-bottom:6px;border:1px solid var(--border);transition:.15s;user-select:none;min-height:48px}
+.ck.on{border-color:var(--accent-border);background:var(--accent-bg)}
+.ck-b{width:22px;height:22px;border-radius:5px;border:2px solid var(--border2);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:.15s}
+.ck.on .ck-b{background:var(--accent);border-color:var(--accent)}
+.ck-b svg{display:none}.ck.on .ck-b svg{display:block}
+
+/* ── MODALI ── */
+.mo{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;display:flex;align-items:flex-end;justify-content:center;backdrop-filter:blur(4px)}
+@media(min-width:601px){.mo{align-items:center;padding:14px}}
+.md{background:var(--bg2);border:1px solid var(--border);border-radius:16px 16px 0 0;padding:24px 20px;width:100%;max-height:92dvh;overflow-y:auto;-webkit-overflow-scrolling:touch}
+@media(min-width:601px){.md{border-radius:12px;max-width:620px;max-height:90vh;padding:24px}}
+/* Handle bar per sheet mobile */
+.md::before{content:'';display:block;width:40px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 18px}
+@media(min-width:601px){.md::before{display:none}}
+.md-t{font-family:'Space Mono',monospace;font-size:14px;font-weight:700;margin-bottom:16px}
+
+/* ── RIEPILOGO ── */
+.rp{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-top:12px}
+.rr{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);font-size:12px}.rr:last-child{border:none;font-weight:700;font-size:13px}
+
+/* ── MISC ── */
+.empty{text-align:center;padding:36px 20px;color:var(--text3);font-size:13px}
+.footer{text-align:center;padding:16px;font-size:10px;color:var(--text3);border-top:1px solid var(--border);margin-top:auto;font-family:'Space Mono',monospace}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}.fade{animation:fadeIn .25s ease}
+.sinfo{background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:10px 14px;margin-bottom:10px;font-size:11px;color:var(--text2)}
+.sr{display:flex;justify-content:space-between;padding:4px 0}
+
+/* ── MOBILE READABILITY ── v4.3.9: font fluidi con clamp() per adattamento automatico
+   a qualsiasi schermo da 320px in su senza breakpoint bruschi. */
+@media(max-width:560px){
+  .sinfo{font-size:clamp(11px, 3.2vw, 13px)}
+  .ct{font-size:clamp(12px, 3.5vw, 15px)}
+  .fl{font-size:clamp(9px, 2.5vw, 11px)}
+  .badge{font-size:clamp(9px, 2.4vw, 11px);padding:2px 7px}
+  .rr{font-size:clamp(11px, 3.1vw, 13px)}
+}
+
+/* ── DASHBOARD GRIDS ── */
+/* v4.3.9: font-size fluidi con clamp() — scala automaticamente dal telefono piccolo
+   al tablet senza media query. Formula: clamp(MIN, VALORE-PREFERITO-BASATO-SU-VW, MAX) */
+.dash-kpi{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-bottom:16px}
+@media(max-width:480px){
+  .dash-kpi{grid-template-columns:1fr 1fr;gap:8px}
+  .dash-kpi .sinfo{padding:clamp(10px, 3vw, 16px) clamp(8px, 2.5vw, 14px) !important;min-height:auto;display:flex;flex-direction:column;justify-content:center}
+  .dash-kpi .fl{font-size:clamp(9px, 2.5vw, 12px) !important;letter-spacing:.6px}
+  .dash-kpi .sinfo > div:nth-child(2){font-size:clamp(16px, 5.5vw, 28px) !important;margin-top:4px;line-height:1.15;font-weight:700}
+  .dash-kpi .sinfo > div:nth-child(3){font-size:clamp(9px, 2.5vw, 11px) !important;margin-top:2px}
+}
+.dash-eff{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px}
+@media(max-width:480px){
+  .dash-eff{grid-template-columns:1fr;gap:8px}
+  .dash-eff .sinfo{padding:clamp(10px, 3vw, 16px) !important}
+  .dash-eff .fl{font-size:clamp(9px, 2.5vw, 12px) !important}
+  .dash-eff span:not([style*="font-size"]){font-size:clamp(11px, 3vw, 13px)}
+}
+
+/* ── MATERIAL TOTALS CARDS ── */
+.mat-totals-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px}
+@media(max-width:480px){.mat-totals-grid{grid-template-columns:1fr 1fr;gap:8px}}
+.mat-card{border:1px solid;border-radius:10px;padding:14px 14px 10px;transition:transform .15s,box-shadow .15s;display:flex;flex-direction:column;gap:4px}
+.mat-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.25)}
+.mat-card-name{font-family:'Space Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:1px;font-weight:700;opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mat-card-kg{font-size:24px;font-weight:700;line-height:1.15;font-family:'DM Sans',sans-serif}
+@media(max-width:480px){
+  .mat-card{padding:clamp(10px, 3vw, 14px) clamp(10px, 2.8vw, 12px) 8px;gap:4px}
+  .mat-card-name{font-size:clamp(9px, 2.6vw, 12px);letter-spacing:.6px}
+  .mat-card-kg{font-size:clamp(16px, 5vw, 26px);line-height:1.1}
+  .mat-card-detail{font-size:clamp(9px, 2.5vw, 12px) !important}
+  .mat-card-foot{font-size:clamp(8px, 2.3vw, 11px) !important}
+}
+.mat-card-detail{display:flex;gap:10px;font-size:10px;color:var(--text2);font-family:'Space Mono',monospace;flex-wrap:wrap}
+.mat-card-foot{display:flex;gap:8px;font-size:9px;color:var(--text3);margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,.06);font-family:'Space Mono',monospace;align-items:center}
+
+/* ── Card title (CT) più grande su mobile ── */
+@media(max-width:480px){
+  .ct{font-size:14px !important}
+  /* Date subtitle in dashboard - più leggibile */
+  .chd > div:last-child:not(.btn){font-size:12px}
+}
+
+/* ── LOGIN ── */
+.login-screen{position:fixed;inset:0;background:var(--bg);z-index:1000;display:flex;align-items:center;justify-content:center;flex-direction:column;padding:20px}
+.login-logo{font-family:'Space Mono',monospace;font-size:28px;font-weight:700;color:var(--accent);letter-spacing:3px;margin-bottom:4px}
+.login-sub{font-size:12px;color:var(--text3);margin-bottom:32px;letter-spacing:1px}
+.login-card{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:32px 28px;max-width:320px;width:100%;text-align:center}
+@media(max-width:380px){.login-card{padding:24px 16px}}
+.login-title{font-family:'Space Mono',monospace;font-size:13px;color:var(--text2);margin-bottom:20px;letter-spacing:1px}
+
+/* ── PIN ── */
+.pin-dots{display:flex;gap:12px;justify-content:center;margin:14px 0}
+.pin-dot{width:16px;height:16px;border-radius:50%;border:2px solid var(--border2);transition:.2s}
+.pin-dot.filled{background:var(--accent);border-color:var(--accent)}
+.pin-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:260px;margin:0 auto}
+.pin-key{padding:16px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:20px;font-weight:700;cursor:pointer;text-align:center;transition:.15s;min-height:56px;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.pin-key:active{background:var(--bg4);border-color:var(--accent)}
+.pin-key.del{color:var(--red)}
+@media(max-width:380px){.pin-grid{max-width:220px;gap:8px}.pin-key{font-size:18px;min-height:50px}}
+
+/* ── STORICO TABS ── */
+.stab{display:flex;gap:6px;margin-bottom:12px;padding-bottom:8px;flex-wrap:wrap}
+.stab button{padding:8px 16px;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--text2);font:500 12px 'DM Sans',sans-serif;cursor:pointer;transition:.15s;min-height:36px;touch-action:manipulation}
+.stab button:hover{background:var(--bg3)}
+.stab button.active{background:var(--accent-bg);color:var(--accent);border-color:var(--accent-border);font-weight:700}
+@media(max-width:480px){.stab button{flex:1;text-align:center;font-size:13px;min-height:40px}}
+
+/* ── SFRIDO BADGES ── */
+.sf-section{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:8px}
+.sf-section-title{font-family:'Space Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:8px}
+.sf-used-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:var(--blue-bg);color:var(--blue)}
+.sf-lost-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:var(--red-bg);color:var(--red)}
+
+/* ── GUIDA ── */
+.g-section{margin-bottom:28px}
+.g-h1{font-family:'Space Mono',monospace;font-size:18px;font-weight:700;color:var(--accent);margin-bottom:6px;padding-bottom:8px;border-bottom:2px solid var(--accent-border)}
+.g-h2{font-family:'Space Mono',monospace;font-size:12px;font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:1.5px;margin:18px 0 8px;display:flex;align-items:center;gap:8px}
+.g-h2::before{content:'';display:block;width:3px;height:14px;background:var(--accent);border-radius:2px}
+.g-p{font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:10px}
+.g-tip{background:rgba(249,115,22,.07);border-left:3px solid var(--accent);border-radius:0 7px 7px 0;padding:10px 14px;margin:10px 0;font-size:12px;color:var(--text2)}
+.g-warn{background:rgba(239,68,68,.07);border-left:3px solid var(--red);border-radius:0 7px 7px 0;padding:10px 14px;margin:10px 0;font-size:12px;color:var(--text2)}
+.g-note{background:rgba(59,130,246,.07);border-left:3px solid var(--blue);border-radius:0 7px 7px 0;padding:10px 14px;margin:10px 0;font-size:12px;color:var(--text2)}
+.g-step{display:flex;gap:12px;margin-bottom:10px;align-items:flex-start}
+.g-num{min-width:24px;height:24px;border-radius:50%;background:var(--accent);color:#fff;font:700 11px 'Space Mono',monospace;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px}
+.g-step-txt{font-size:13px;color:var(--text2);line-height:1.6}
+.g-kv{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px}
+.g-kv:last-child{border:none}
+.g-kv span:first-child{color:var(--text3)}
+.g-kv span:last-child{color:var(--text);font-weight:600}
+.g-formula{background:var(--bg3);border:1px solid var(--border2);border-radius:6px;padding:8px 14px;font-family:'Space Mono',monospace;font-size:11px;color:var(--accent);margin:8px 0}
+.g-toc{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px;margin-bottom:20px}
+@media(max-width:480px){.g-toc{grid-template-columns:1fr}}
+.g-toc-item{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px 14px;cursor:pointer;font-size:13px;color:var(--text2);transition:.15s;display:flex;align-items:center;gap:8px;min-height:44px}
+.g-toc-item:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-bg)}
+
+/* ── LAVORAZIONE: bottone registra ── */
+@media(max-width:600px){
+  #lvB{width:100%;justify-content:center;min-height:50px;font-size:15px;margin-top:8px}
+}
+
+/* ── MODAL footer buttons stack on mobile ── */
+.md-footer{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+@media(max-width:480px){
+  .md-footer{flex-direction:column}
+  .md-footer .btn{width:100%;justify-content:center;min-height:48px;font-size:14px}
+  /* card header action buttons wrap and go full width */
+  .chd > div:last-child{display:flex;flex-wrap:wrap;gap:6px;width:100%}
+  .chd > div:last-child .btn{flex:1;justify-content:center;min-width:80px}
+}
+/* sinfo no margin on mobile inside dash */
+@media(max-width:480px){
+  .sinfo{padding:8px 10px}
+  .sr{font-size:11px}
+}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+// ═══ SERVICE WORKER (installabilità + cache offline) ═══
+// Manifest e SW sono file separati (manifest.json, sw.js) per compatibilità
+// completa con GitHub Pages e installazione PWA su iOS/Android/Desktop.
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{
+    // Cleanup eventuali vecchi SW registrati via blob (da versioni precedenti)
+    navigator.serviceWorker.getRegistrations().then(regs=>{
+      regs.forEach(r=>{
+        if(r.active && r.active.scriptURL.startsWith('blob:')) r.unregister();
+      });
+    }).catch(()=>{});
+    // Registra il SW reale
+    navigator.serviceWorker.register('sw.js',{scope:'./'}).catch(e=>{
+      console.warn('SW registration failed:', e);
+    });
+  });
+}
+
+// ═══ APPWRITE CONFIG ═══
+const AW_ENDPOINT = 'https://fra.cloud.appwrite.io/v1';
+const AW_PROJECT  = '69e48c9b00206149a652';
+const AW_DB       = '69e48d53001cbfe3f77d';
+const AW_COLS     = {mag:'magazzino',lav:'lavorazioni',sf:'sfridi',snaps:'snapshots',storici:'storici',mat:'materiali'};
+const DOC_ID      = 'metaltrack_main';
+
+let awClient, awDB;
+let connStatus  = 'offline';  // 'online' | 'syncing' | 'offline' | 'pending'
+let _pendingSave = false;      // c'è un salvataggio in attesa di connessione
+let _saveTimer   = null;       // debounce timer
+let _rtUnsubscribe = null;     // funzione per chiudere la subscription realtime
+let _lastLocalWriteAt = 0;     // timestamp ultimo save() locale — anti-echo realtime
+const _RT_ECHO_WINDOW = 2500;  // ms: eventi realtime arrivati entro questo tempo dopo una scrittura locale sono ignorati (sono il nostro stesso update)
+
+function awInit(){
+  try{
+    const {Client, Databases} = Appwrite;
+    awClient = new Client().setEndpoint(AW_ENDPOINT).setProject(AW_PROJECT);
+    awDB = new Databases(awClient);
+    awSubscribeRealtime();
+  }catch(e){ console.warn('Appwrite SDK non disponibile', e); }
+}
+
+// ═══ APPWRITE REALTIME ═══
+// Si sottoscrive agli eventi di tutte le collection. Quando un altro dispositivo
+// modifica il database, riceviamo un messaggio WebSocket e aggiorniamo l'app
+// senza bisogno di ricaricare la pagina.
+function awSubscribeRealtime(){
+  if(!awClient||!awClient.subscribe)return;
+  if(_rtUnsubscribe){try{_rtUnsubscribe();}catch(e){}}
+  // Canali: una subscription per ogni collection del nostro progetto
+  const channels = Object.values(AW_COLS).map(col=>`databases.${AW_DB}.collections.${col}.documents.${DOC_ID}`);
+  try{
+    _rtUnsubscribe = awClient.subscribe(channels, evt=>{
+      // Anti-echo: se abbiamo appena scritto noi, ignora il nostro stesso update
+      if(Date.now()-_lastLocalWriteAt < _RT_ECHO_WINDOW) return;
+      awHandleRealtimeEvent(evt);
+    });
+  }catch(e){
+    console.warn('Realtime subscribe failed:', e);
+  }
+}
+
+// Gestisce un singolo evento realtime. Aggiorna la variabile corretta in base
+// alla collection ricevuta, salva in locale (no awSaveAll — non è una nostra modifica),
+// e re-renderizza se l'utente non sta digitando in un input.
+function awHandleRealtimeEvent(evt){
+  try{
+    const payload = evt.payload;
+    if(!payload||!payload.$collectionId||payload.$id!==DOC_ID) return;
+    const colId = payload.$collectionId;
+    let data;
+    try{ data = JSON.parse(payload.payload); }catch(e){ return; }
+    // Trova la chiave interna in base al collection ID ricevuto
+    const key = Object.keys(AW_COLS).find(k=>AW_COLS[k]===colId);
+    if(!key) return;
+    // Aggiorna la variabile corrispondente + localStorage
+    const mapping = {
+      mag:     {arr:()=>mag,      set:v=>{mag=v;},      ls:'st4m'},
+      lav:     {arr:()=>lav,      set:v=>{lav=v;},      ls:'st4l'},
+      sf:      {arr:()=>sfRiutil, set:v=>{sfRiutil=v;}, ls:'st4sf'},
+      snaps:   {arr:()=>snaps,    set:v=>{snaps=v;},    ls:'st4s'},
+      storici: {arr:()=>storici,  set:v=>{storici=v;},  ls:'st4st'},
+      mat:     {arr:()=>materiali,set:v=>{materiali=v;},ls:'st4mat'}
+    };
+    const m = mapping[key]; if(!m) return;
+    m.set(data);
+    try{ localStorage.setItem(m.ls, JSON.stringify(data)); }catch(e){}
+    // Ricalcola i residui del magazzino (indispensabile dopo update remoti di mag o lav)
+    if(key==='mag'||key==='lav') recalc();
+    // Re-render intelligente: se l'utente sta digitando in un input o in una modale,
+    // evitiamo il render completo che perderebbe focus/testo. Facciamo solo renderPage
+    // (aggiorna il contenuto ma non la nav né la modale aperta).
+    if(appUnlocked){
+      const ae = document.activeElement;
+      const isEditing = ae && (ae.tagName==='INPUT'||ae.tagName==='SELECT'||ae.tagName==='TEXTAREA');
+      if(S.modal||isEditing){
+        // Piccolo indicatore flash sul pallino per segnalare dato aggiornato
+        flashSyncDot();
+      } else {
+        renderPage();
+        flashSyncDot();
+      }
+    }
+  }catch(e){
+    console.warn('Realtime handler error:', e);
+  }
+}
+
+// Flash visivo sul pallino per indicare che un dato è arrivato dal realtime
+let _flashTimer = null;
+function flashSyncDot(){
+  const dot = document.getElementById('conn-dot');
+  if(!dot) return;
+  dot.classList.add('rt-flash');
+  if(_flashTimer) clearTimeout(_flashTimer);
+  _flashTimer = setTimeout(()=>dot.classList.remove('rt-flash'), 600);
+}
+
+function setConn(s){
+  connStatus = s;
+  updateConnDot();
+}
+
+function updateConnDot(){
+  const dot = document.getElementById('conn-dot');
+  const lbl = document.getElementById('conn-lbl');
+  if(!dot) return;
+  dot.className = 'conn-dot ' + connStatus;
+  const labels = {online:'SYNC', syncing:'SYNC…', offline:'', pending:'IN CODA'};
+  lbl.textContent = labels[connStatus] ?? '';
+}
+
+// ── Lettura documento ──
+async function awRead(colKey){
+  if(!awDB) return null;
+  try{
+    const res = await awDB.getDocument(AW_DB, AW_COLS[colKey], DOC_ID);
+    return JSON.parse(res.payload);
+  }catch(e){
+    if(e.code===404) return null;
+    throw e;
+  }
+}
+
+// ── Scrittura upsert ──
+async function awWrite(colKey, data){
+  if(!awDB) return;
+  const payload = JSON.stringify(data);
+  try{
+    await awDB.updateDocument(AW_DB, AW_COLS[colKey], DOC_ID, {payload});
+  }catch(e){
+    if(e.code===404){
+      await awDB.createDocument(AW_DB, AW_COLS[colKey], DOC_ID, {payload});
+    } else { throw e; }
+  }
+}
+
+// ── Carica tutto da Appwrite ──
+async function awLoadAll(){
+  setConn('syncing');
+  try{
+    const [rMag,rLav,rSf,rSnaps,rStorici,rMat] = await Promise.all([
+      awRead('mag'), awRead('lav'), awRead('sf'), awRead('snaps'), awRead('storici'),
+      awRead('mat').catch(()=>null)  // collection materiali opzionale (fallback graceful)
+    ]);
+    if(rMag    !==null){ mag      = rMag;     localStorage.setItem('st4m',  JSON.stringify(mag));      }
+    if(rLav    !==null){ lav      = rLav;     localStorage.setItem('st4l',  JSON.stringify(lav));      }
+    if(rSf     !==null){ sfRiutil = rSf;      localStorage.setItem('st4sf', JSON.stringify(sfRiutil)); }
+    if(rSnaps  !==null){ snaps    = rSnaps;   localStorage.setItem('st4s',  JSON.stringify(snaps));    }
+    if(rStorici!==null){ storici  = rStorici; localStorage.setItem('st4st', JSON.stringify(storici));  }
+    if(rMat    !==null){ materiali= rMat;     localStorage.setItem('st4mat',JSON.stringify(materiali));}
+    setConn('online');
+    _pendingSave = false;
+    return true;
+  }catch(e){
+    console.warn('awLoadAll error', e);
+    setConn('offline');
+    return false;
+  }
+}
+
+// ── Salva tutto su Appwrite (con debounce 800ms) ──
+function awSaveAll(){
+  if(_saveTimer) clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(async()=>{
+    if(!awDB || !navigator.onLine){
+      _pendingSave = true;
+      setConn('pending');
+      return;
+    }
+    setConn('syncing');
+    _lastLocalWriteAt = Date.now();  // anti-echo: marcatore per ignorare il nostro stesso update realtime
+    try{
+      // Scrittura materiali è "best-effort": se la collection non esiste su Appwrite
+      // non blocca il resto del sync. L'utente può creare la collection 'materiali'
+      // quando vuole dal pannello Appwrite.
+      const writes = [
+        awWrite('mag',     mag),
+        awWrite('lav',     lav),
+        awWrite('sf',      sfRiutil),
+        awWrite('snaps',   snaps),
+        awWrite('storici', storici),
+        awWrite('mat',     materiali).catch(e=>console.warn('Collection materiali non trovata - skip',e))
+      ];
+      await Promise.all(writes);
+      setConn('online');
+      _pendingSave = false;
+    }catch(e){
+      console.warn('awSaveAll error', e);
+      _pendingSave = true;
+      setConn('pending');
+    }
+  }, 800);
+}
+
+// ── Auto-sync quando torna online ──
+window.addEventListener('online', ()=>{
+  if(_pendingSave){
+    setConn('syncing');
+    awSaveAll();
+  } else {
+    setConn('online');
+  }
+});
+window.addEventListener('offline', ()=>{
+  if(connStatus !== 'pending') setConn('offline');
+});
+
+// ═══ PIN AUTH ═══
+let appUnlocked=false,loginDigits='';
+
+function showLogin(){
+  loginDigits='';
+  document.getElementById('app').innerHTML=`
+    <div class="login-screen">
+      <div class="login-logo">METALTRACK</div>
+      <div class="login-sub">WASTE MANAGER v4.3.9</div>
+      <div class="login-card">
+        <div class="login-title">🔒 INSERISCI PIN</div>
+        <div class="pin-dots" id="login-dots">
+          ${[0,1,2,3].map(i=>`<div class="pin-dot" id="lpd${i}"></div>`).join('')}
+        </div>
+        <div id="login-err" style="text-align:center;color:var(--red);font-size:12px;min-height:18px;margin-bottom:10px"></div>
+        <div class="pin-grid">
+          ${[1,2,3,4,5,6,7,8,9].map(k=>`<button class="pin-key" onclick="loginKey('${k}')">${k}</button>`).join('')}
+          <span></span>
+          <button class="pin-key" onclick="loginKey('0')">0</button>
+          <button class="pin-key del" onclick="loginKey('⌫')">⌫</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+window.loginKey=function(k){
+  if(k==='⌫'){loginDigits=loginDigits.slice(0,-1);}
+  else if(loginDigits.length<4){loginDigits+=k;}
+  [0,1,2,3].forEach(i=>{const d=document.getElementById('lpd'+i);if(d)d.className='pin-dot'+(i<loginDigits.length?' filled':'');});
+  if(loginDigits.length===4){
+    setTimeout(()=>{
+      if(loginDigits===appConfig.pin){appUnlocked=true;render();}
+      else{
+        loginDigits='';
+        const err=document.getElementById('login-err');
+        if(err)err.textContent='PIN errato. Riprova.';
+        [0,1,2,3].forEach(i=>{const d=document.getElementById('lpd'+i);if(d)d.className='pin-dot';});
+      }
+    },200);
+  }
+};
+
+// ═══ UTILS ═══
+const $=s=>document.querySelector(s);
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+const fmt=(n,d=2)=>n==null?'—':Number(n).toFixed(d);
+const fmtE=n=>n==null?'—':('€ '+fmt(n));
+const esc=s=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const MICO='<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>';
+const CHK_SVG='<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>';
+
+// ═══ STATE ═══
+let S={tab:'dashboard',mob:false,modal:null,magEsaOpen:false};
+let mag=[],lav=[],snaps=[],sfRiutil=[],storici=[],materiali=[];
+let appConfig={pin:'1234',pinDel:'1234'};
+
+// Lista materiali standard precaricata alla prima apertura
+const MATERIALI_STD=[
+  {id:'mat_std_acc',nome:'Acciaio',dens:7850},
+  {id:'mat_std_alu',nome:'Alluminio',dens:2700},
+  {id:'mat_std_ram',nome:'Rame',dens:8900},
+  {id:'mat_std_ott',nome:'Ottone',dens:8500},
+  {id:'mat_std_tit',nome:'Titanio',dens:4500},
+  {id:'mat_std_ghi',nome:'Ghisa',dens:7200}
+];
+
+function load(){
+  try{
+    mag=JSON.parse(localStorage.getItem('st4m'))||[];
+    lav=JSON.parse(localStorage.getItem('st4l'))||[];
+    snaps=JSON.parse(localStorage.getItem('st4s'))||[];
+    sfRiutil=JSON.parse(localStorage.getItem('st4sf'))||[];
+    storici=JSON.parse(localStorage.getItem('st4st'))||[];
+    materiali=JSON.parse(localStorage.getItem('st4mat'))||[];
+    // Prima apertura: precarica i 6 materiali standard
+    if(!materiali||materiali.length===0){
+      materiali=MATERIALI_STD.map(m=>({...m}));
+      localStorage.setItem('st4mat',JSON.stringify(materiali));
+    }
+    const cfg=JSON.parse(localStorage.getItem('st4cfg'));
+    if(cfg)appConfig=Object.assign(appConfig,cfg);
+    // Migrazione da v3
+    ['st3m','st3l','st3s','st3sf','st3st','st3cfg'].forEach((k,i)=>{
+      const v=localStorage.getItem(k);
+      if(v){
+        const keys=['st4m','st4l','st4s','st4sf','st4st','st4cfg'];
+        if(!localStorage.getItem(keys[i]))localStorage.setItem(keys[i],v);
+      }
+    });
+    // Migrazione v4.3.9: ricalcolo psot con logica uniforme
+    // Vecchio: psot = sfu ? pp : pp+psf   -->   Nuovo: psot = (sfu && psf>0) ? max(0,pp-psf) : pp
+    // Flag persistente per non ripetere la migrazione
+    if(!localStorage.getItem('st4_mig43')){
+      let migrated=0;
+      lav.forEach(l=>{
+        if(l._sfPersoManuale)return; // sfridi persi manuali sono già corretti (psot = psf)
+        const newPsot = (l.sf && l.sfu && l.psf>0) ? Math.max(0,(l.pp||0)-(l.psf||0)) : (l.pp||0);
+        if(Math.abs((l.psot||0)-newPsot)>0.001){ l.psot=+newPsot.toFixed(3); migrated++; }
+      });
+      localStorage.setItem('st4_mig43','1');
+      if(migrated>0){
+        localStorage.setItem('st4l',JSON.stringify(lav));
+        console.log(`[v4.3.9] Migrate ${migrated} lavorazioni: psot ricalcolato con nuova logica.`);
+      }
+    }
+  }catch(e){mag=[];lav=[];snaps=[];sfRiutil=[];storici=[];materiali=MATERIALI_STD.map(m=>({...m}));}
+}
+function save(){
+  try{
+    // v4.3.9: mantieni sempre aggiornato lo snapshot del mese corrente con i dati live,
+    // così "Questo mese" nello Storico mostra sempre il residuo reale in tempo reale.
+    // Gli snapshot dei mesi passati (già chiusi con closedAt) non vengono toccati.
+    try{ aggiornaSnapshotMeseCorrente(); }catch(e){}
+    localStorage.setItem('st4m',JSON.stringify(mag));
+    localStorage.setItem('st4l',JSON.stringify(lav));
+    localStorage.setItem('st4s',JSON.stringify(snaps));
+    localStorage.setItem('st4sf',JSON.stringify(sfRiutil));
+    localStorage.setItem('st4st',JSON.stringify(storici));
+    localStorage.setItem('st4mat',JSON.stringify(materiali));
+    localStorage.setItem('st4cfg',JSON.stringify(appConfig));
+  }catch(e){}
+  // Sync automatico su Appwrite con debounce 800ms
+  awSaveAll();
+}
+
+// Aggiorna (o crea) lo snapshot del mese corrente con i dati attuali.
+// Serve per avere "Residuo del mese" aggiornato live nello Storico del mese in corso.
+function aggiornaSnapshotMeseCorrente(){
+  const now=new Date();
+  const key=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
+  const idx=storici.findIndex(s=>s.key===key);
+  if(idx>=0 && storici[idx].closedAt) return; // mese già chiuso, non toccare
+  if(idx>=0) storici.splice(idx,1);
+  // Ricrea snapshot con stato attuale
+  creaSnapshotMese(key,now);
+}
+
+// ═══ CALC ═══
+function calcItem(m){
+  if(m.tipo==='lamiera'){
+    const l=m.dim.l/1000,w=m.dim.w/1000,t=m.dim.t/1000;
+    m.sup=+(l*w).toFixed(6);m.vol=+(l*w*t).toFixed(8);
+  }else{
+    const r=(m.dim.de/1000)/2,h=m.dim.lu/1000;
+    m.sup=+(Math.PI*m.dim.de/1000*h).toFixed(6);m.vol=+(Math.PI*r*r*h).toFixed(8);
+  }
+  m.peso=+(m.vol*(m.dens||7850)).toFixed(3);
+}
+
+// recalc COMPLETO — usato solo all'avvio, dopo load dal cloud, dopo delete
+function recalc(){
+  // Passo 1: calcola geometria e imposta res=peso iniziale per tutti
+  mag.forEach(m=>{calcItem(m);m.res=m.peso;});
+  // Passo 2: costruisce mappa id→indice per lookup O(1) invece di find() O(n)
+  const magIdx={};
+  mag.forEach((m,i)=>magIdx[m.id]=i);
+  // Passo 3: sottrae ogni lavorazione (incluso sfrido perso manuale con materiale sorgente)
+  // L._sfPersoManuale SENZA sid è escluso (es. utente ha inserito senza scegliere lamiera)
+  lav.forEach(l=>{
+    if(!l.sid)return;
+    const m=mag[magIdx[l.sid]];
+    if(m)m.res=Math.max(0,m.res-l.psot);
+  });
+  // Passo 4: marca esauriti / ripristina se residuo torna positivo
+  //
+  // Logica: se un materiale aveva esa=true MA senza dataEsaurimentoManuale (cioè è stato
+  // esaurito automaticamente per consumo), e ora il residuo è tornato positivo (es. dopo
+  // eliminazione di una lavorazione o sfrido perso), riapriamo il materiale.
+  // Se invece l'utente ha esaurito MANUALMENTE (flag _esaManuale), rispettiamo la sua scelta.
+  const oggi=new Date().toLocaleDateString('it-IT');
+  mag.forEach(m=>{
+    if(m.res<=0.001 && !m.esa){
+      m.esa=true;
+      if(!m.dataEsaurimento)m.dataEsaurimento=oggi;
+    } else if(m.res>0.001 && m.esa && !m._esaManuale){
+      // Esaurito per consumo ma ora il residuo è tornato positivo → riapri
+      m.esa=false;
+      m.dataEsaurimento='';
+    }
+  });
+}
+
+// recalcOne — ricalcola UN SOLO materiale per modifiche inline (chDim, dens, ecc.)
+// Evita di riscorrere tutto il magazzino per una singola modifica di campo
+function recalcOne(idx){
+  const m=mag[idx];
+  if(!m)return;
+  calcItem(m);
+  m.res=m.peso;
+  lav.forEach(l=>{
+    if(l.sid!==m.id)return;
+    m.res=Math.max(0,m.res-l.psot);
+  });
+  const oggi=new Date().toLocaleDateString('it-IT');
+  if(m.res<=0.001 && !m.esa){
+    m.esa=true;
+    if(!m.dataEsaurimento)m.dataEsaurimento=oggi;
+  } else if(m.res>0.001 && m.esa && !m._esaManuale){
+    m.esa=false;
+    m.dataEsaurimento='';
+  }
+}
+
+// ═══ STORICO AUTO ═══
+function checkStorico(){
+  const now=new Date();
+  const keyOggi=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
+  // v4.3.9: se c'è uno snapshot di un mese diverso da quello corrente E quel mese NON è
+  // ancora stato "chiuso" (non ha la proprietà closedAt), significa che è un snapshot in
+  // corso d'opera del mese precedente. Non facciamo nulla, è la situazione normale.
+  // Se invece siamo in un nuovo mese e non esiste snapshot del mese corrente, lo creiamo:
+  if(!storici.find(s=>s.key===keyOggi)) creaSnapshotMese(keyOggi,now);
+  // Inoltre: per ogni mese passato che non è ancora stato "chiuso" (closedAt mancante),
+  // lo chiudiamo definitivamente con i valori finali (il primo giorno del mese successivo
+  // è il primo momento in cui possiamo "fotografare" la chiusura del mese precedente).
+  storici.forEach(s=>{
+    if(s.closedAt) return; // già chiuso
+    if(s.key===keyOggi) return; // è il mese corrente, non ancora chiuso
+    // Se il mese è passato e non è stato chiuso, lo chiudiamo ora con i dati attuali
+    // (sono i dati esistenti al momento del passaggio al mese successivo).
+    s.closedAt = new Date().toISOString();
+  });
+}
+function creaSnapshotMese(key,data){
+  const lavMese=lav.filter(l=>{
+    if(!l.date)return false;
+    const p=l.date.split('/');
+    const [yy,mm]=key.split('-');
+    return p.length>=3&&p[1]===mm&&p[2].startsWith(yy);
+  });
+  const snap={
+    id:uid(),key,
+    date:(data||new Date()).toLocaleDateString('it-IT'),
+    magazzino:mag.map(m=>({col:m.col,mat:m.mat,tipo:m.tipo,peso:m.peso,res:m.res,ckg:m.ckg||0,esa:m.esa})),
+    sfRiutil:sfRiutil.map(s=>({...s})),
+    totSfUsato:sfRiutil.filter(s=>!s.usato).reduce((a,s)=>a+s.peso,0),
+    totSfUsatoVal:sfRiutil.filter(s=>!s.usato).reduce((a,s)=>a+s.peso*(s.ckg||0),0),
+    totSfPerso:lav.filter(l=>l.sf&&!l.sfu&&l.psf>0).reduce((a,l)=>a+l.psf,0),
+    valoreMag:mag.reduce((a,m)=>a+m.res*(m.ckg||0),0),
+    lavorazioni:lavMese.map(l=>({...l}))
+  };
+  storici.push(snap);
+}
+window.generaStorico=function(){
+  const now=new Date();
+  const key=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
+  const idx=storici.findIndex(s=>s.key===key);
+  if(idx>=0)storici.splice(idx,1);
+  creaSnapshotMese(key,now);
+  save();render();
+  alert('Snapshot '+key+' aggiornato!');
+};
+
+// ═══ RENDER ═══
+// render() completo — ricostruisce nav + pagina.
+// Chiamato solo al cambio tab, apertura/chiusura modale, login/logout.
+function render(){
+  if(!appUnlocked){showLogin();return;}
+  document.getElementById('app').innerHTML=`
+    <nav class="nav">
+      <div class="nav-brand">METALTRACK <span>/ v4.3.9</span></div>
+      <div class="nav-tabs">
+        ${TB('dashboard','📊 Dashboard')}${TB('magazzino','📦 Magazzino')}${TB('sfridi','♻️ Sfridi')}${TB('lavorazione','⚙️ Lavorazione')}${TB('commesse','📋 Commesse')}${TB('storico','📅 Storico')}${TB('guida','📖 Guida')}
+      </div>
+      <button class="btn btn-g btn-s" style="margin-left:auto;flex-shrink:0" onclick="cpState={step:'old',old:'',new1:'',new2:'',err:''};S.modal={type:'changepin'};render()" title="Cambia PIN">🔑</button>
+      <div class="conn-wrap" title="Stato sincronizzazione cloud"><div class="conn-dot ${connStatus}" id="conn-dot"></div><span id="conn-lbl">${connStatus==='online'?'SYNC':connStatus==='syncing'?'SYNC…':connStatus==='pending'?'IN CODA':''}</span></div>
+      <button class="ham" onclick="S.mob=!S.mob;render()">${MICO}</button>
+    </nav>
+    <div class="mmenu ${S.mob?'open':''}">
+      ${TB('dashboard','📊 Dashboard')}${TB('magazzino','📦 Magazzino')}${TB('sfridi','♻️ Sfridi')}${TB('lavorazione','⚙️ Nuova Lavorazione')}${TB('commesse','📋 Commesse')}${TB('storico','📅 Storico')}${TB('guida','📖 Guida')}
+    </div>
+    <main class="main fade" id="pg"></main>
+    <footer class="footer">METALTRACK v4.3.9 — PWA · sync automatico Appwrite · protetto da PIN<div style="margin-top:6px;font-size:9px;color:var(--text3);opacity:.7;font-family:'Space Mono',monospace;letter-spacing:.3px">Creator: Ing. G. Politi</div></footer>
+    ${S.modal?rMod():''}`;
+  renderPage();
+}
+
+// renderPage() — aggiorna SOLO il contenuto della tab attiva, senza toccare nav/footer.
+// Usato da tutte le modifiche inline: niente flash, tastiera mobile non si chiude.
+function renderPage(){
+  const p=document.getElementById('pg');
+  if(!p){render();return;}
+  if(S.tab==='dashboard')p.innerHTML=rDashboard();
+  else if(S.tab==='magazzino')p.innerHTML=rMag();
+  else if(S.tab==='sfridi')p.innerHTML=rSfridi();
+  else if(S.tab==='lavorazione')p.innerHTML=rLav();
+  else if(S.tab==='commesse')p.innerHTML=rCom();
+  else if(S.tab==='storico')p.innerHTML=rStorico();
+  else if(S.tab==='guida')p.innerHTML=rGuida();
+}
+
+function TB(id,l){return`<button class="ntb ${S.tab===id?'active':''}" onclick="S.tab='${id}';S.mob=false;render()">${l}</button>`;}
+
+// ═══ PIN SYSTEM ═══
+// Due PIN distinti:
+//  - appConfig.pin    → PIN di ACCESSO (login iniziale all'app)
+//  - appConfig.pinDel → PIN di ELIMINAZIONE (richiesto per cancellare commesse, sfridi, storico)
+// askPin(label, cb, which?) — which: 'del' (default) oppure 'access'
+let pinState={digits:'',callback:null,label:'Inserisci PIN',which:'del'};
+function askPin(label,cb,which){
+  pinState={digits:'',callback:cb,label:label||'Inserisci PIN',which:which||'del'};
+  S.modal={type:'pin'};render();
+}
+function rPinModal(){
+  const hintTxt = pinState.which==='access' ? '🔑 PIN di accesso' : '🗑 PIN di eliminazione';
+  const hintCol = pinState.which==='access' ? 'var(--blue)' : 'var(--red)';
+  return`<div class="mo"><div class="md fade" onclick="event.stopPropagation()" style="max-width:320px">
+    <div class="md-t">${esc(pinState.label)}</div>
+    <div style="text-align:center;font-size:11px;font-family:'Space Mono',monospace;color:${hintCol};margin-bottom:10px;letter-spacing:.6px">${hintTxt}</div>
+    <div class="pin-dots">
+      ${[0,1,2,3].map(i=>`<div class="pin-dot ${i<pinState.digits.length?'filled':''}" id="pd${i}"></div>`).join('')}
+    </div>
+    <div id="pin-err" style="text-align:center;color:var(--red);font-size:12px;min-height:18px;margin-bottom:6px"></div>
+    <div class="pin-grid">
+      ${[1,2,3,4,5,6,7,8,9].map(k=>`<button class="pin-key" onclick="pinKey('${k}')">${k}</button>`).join('')}
+      <span></span>
+      <button class="pin-key" onclick="pinKey('0')">0</button>
+      <button class="pin-key del" onclick="pinKey('⌫')">⌫</button>
+    </div>
+    <div style="text-align:center;margin-top:14px"><button class="btn btn-g" onclick="S.modal=null;render()">Annulla</button></div>
+  </div></div>`;
+}
+window.pinKey=function(k){
+  if(k==='⌫'){pinState.digits=pinState.digits.slice(0,-1);}
+  else if(pinState.digits.length<4){pinState.digits+=k;}
+  [0,1,2,3].forEach(i=>{const d=document.getElementById('pd'+i);if(d)d.className='pin-dot'+(i<pinState.digits.length?' filled':'');});
+  if(pinState.digits.length===4){
+    setTimeout(()=>{
+      // Confronta contro il PIN richiesto (access o del)
+      const targetPin = pinState.which==='access' ? appConfig.pin : (appConfig.pinDel||appConfig.pin);
+      if(pinState.digits===targetPin){S.modal=null;pinState.callback();}
+      else{pinState.digits='';const err=document.getElementById('pin-err');if(err)err.textContent='PIN errato. Riprova.';[0,1,2,3].forEach(i=>{const d=document.getElementById('pd'+i);if(d)d.className='pin-dot';});}
+    },200);
+  }
+};
+
+// ═══ DASHBOARD ═══
+// FIX: rimosso "Costo cliente" dalla dashboard (rimane solo in Commesse)
+function rDashboard(){
+  const lamiere=mag.filter(m=>m.tipo==='lamiera'&&!m.esa);
+  const tondi=mag.filter(m=>m.tipo==='tondo'&&!m.esa);
+  const lamiereEsa=mag.filter(m=>m.tipo==='lamiera'&&m.esa);
+  const tondiEsa=mag.filter(m=>m.tipo==='tondo'&&m.esa);
+  const totValMag=mag.reduce((a,m)=>a+m.res*(m.ckg||0),0);
+  const totSfRiutPeso=sfRiutil.filter(s=>!s.usato).reduce((a,s)=>a+s.peso,0);
+  const totSfRiutVal=sfRiutil.filter(s=>!s.usato).reduce((a,s)=>a+s.peso*(s.ckg||0),0);
+  // lavReali = lavorazioni vere (escludono sfridi persi manuali perché NON sono pezzi prodotti)
+  const lavReali=lav.filter(l=>!l._sfPersoManuale);
+  const totPezzi=lavReali.length;
+  const totPesoProd=lavReali.reduce((a,l)=>a+l.pp,0);
+  // FIX: totali sfrido perso includono TUTTI gli sfridi persi (lavorazioni + manuali)
+  const totSfPersoKg=lav.filter(l=>l.sf&&!l.sfu&&l.psf>0).reduce((a,l)=>a+l.psf,0);
+  const totSfRiutKg=lavReali.filter(l=>l.sfu&&l.psf>0).reduce((a,l)=>a+l.psf,0);
+  const totInput=totPesoProd+totSfPersoKg;
+  const effUso=totInput>0?(totPesoProd/totInput*100):100;
+  const totCostoPz=lavReali.reduce((a,l)=>a+l.ctot,0);
+  const totMargineSf=lavReali.filter(l=>l.sfu&&l.psf>0).reduce((a,l)=>a+(l.psf||0)*(l.ckg||0),0);
+
+  function magEff(m){
+    const lavM=lavReali.filter(l=>l.sid===m.id);
+    const ppTot=lavM.reduce((a,l)=>a+l.pp,0);
+    // FIX: sfPerso per materiale include anche manuali (filtro su lav, non lavReali)
+    const sfPerso=lav.filter(l=>l.sid===m.id&&l.sf&&!l.sfu&&l.psf>0).reduce((a,l)=>a+l.psf,0);
+    const sfRiut=lavM.filter(l=>l.sfu&&l.psf>0).reduce((a,l)=>a+l.psf,0);
+    const usato=ppTot+sfPerso;
+    const eff=usato>0?(ppTot/usato*100):100;
+    return{ppTot,sfPerso,sfRiut,usato,eff,nLav:lavM.length};
+  }
+  const magAttivi=mag.filter(m=>!m.esa&&m.peso>0);
+
+  return`<div class="card">
+    <div class="chd"><div class="ct">Dashboard</div>
+      <div style="font-size:11px;color:var(--text3)">${new Date().toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div>
+    </div>
+    <div class="dash-kpi">
+      <div class="sinfo" style="margin-bottom:0;text-align:center">
+        <div class="fl">Lamiere attive</div>
+        <div style="font-size:28px;font-weight:700;color:var(--text)">${lamiere.length}</div>
+        <div style="font-size:10px;color:var(--text3)">${lamiereEsa.length} esaurite</div>
+      </div>
+      <div class="sinfo" style="margin-bottom:0;text-align:center">
+        <div class="fl">Tondi attivi</div>
+        <div style="font-size:28px;font-weight:700;color:var(--text)">${tondi.length}</div>
+        <div style="font-size:10px;color:var(--text3)">${tondiEsa.length} esauriti</div>
+      </div>
+      <div class="sinfo" style="margin-bottom:0;text-align:center;border-color:var(--accent-border)">
+        <div class="fl">Valore magazzino</div>
+        <div style="font-size:18px;font-weight:700;color:var(--accent)">${fmtE(totValMag)}</div>
+        <div style="font-size:10px;color:var(--text3)">residuo × €/kg</div>
+      </div>
+      <div class="sinfo" style="margin-bottom:0;text-align:center;border-color:rgba(59,130,246,.3)">
+        <div class="fl">Sfridi ♻️ disponibili</div>
+        <div style="font-size:18px;font-weight:700;color:var(--blue)">${fmt(totSfRiutPeso,1)} kg</div>
+        <div style="font-size:10px;color:var(--blue)">${fmtE(totSfRiutVal)}</div>
+      </div>
+      <div class="sinfo" style="margin-bottom:0;text-align:center">
+        <div class="fl">Lavorazioni totali</div>
+        <div style="font-size:28px;font-weight:700;color:var(--text)">${totPezzi}</div>
+        <div style="font-size:10px;color:var(--text3)">${fmt(totPesoProd,1)} kg prodotti</div>
+      </div>
+      <div class="sinfo" style="margin-bottom:0;text-align:center;border-color:rgba(239,68,68,.2)">
+        <div class="fl">Sfrido perso totale</div>
+        <div style="font-size:18px;font-weight:700;color:var(--red)">${fmt(totSfPersoKg,1)} kg</div>
+        <div style="font-size:10px;color:var(--text3)">da inizio</div>
+      </div>
+    </div>
+    <div class="dash-eff">
+      <div class="sinfo" style="margin-bottom:0">
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+          <span style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:1px">Efficienza Uso Materiale</span>
+          <span style="font-weight:800;font-size:16px;color:${effUso>=90?'var(--green)':effUso>=70?'var(--yellow)':'var(--red)'}">${fmt(effUso,1)}%</span>
+        </div>
+        <div style="background:var(--bg4);border-radius:6px;height:10px;overflow:hidden;margin-bottom:6px">
+          <div style="height:100%;width:${Math.min(effUso,100)}%;background:${effUso>=90?'var(--green)':effUso>=70?'var(--yellow)':'var(--red)'};border-radius:6px"></div>
+        </div>
+        <div style="font-size:10px;color:var(--text3)">Sfrido perso: ${fmt(totSfPersoKg,1)} kg | Sfrido ♻️: ${fmt(totSfRiutKg,1)} kg</div>
+        <div style="font-size:10px;color:var(--text3);margin-top:2px">100% = zero sfrido perso.</div>
+      </div>
+      <div class="sinfo" style="margin-bottom:0">
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+          <span style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:1px">Margine da Sfridi ♻️</span>
+          <span style="font-weight:800;font-size:16px;color:var(--blue)">${fmtE(totMargineSf)}</span>
+        </div>
+        <div style="background:var(--bg4);border-radius:6px;height:10px;overflow:hidden;margin-bottom:6px">
+          <div style="height:100%;width:${totCostoPz>0?Math.min(totMargineSf/totCostoPz*100,100):0}%;background:var(--blue);border-radius:6px"></div>
+        </div>
+        <div style="font-size:10px;color:var(--text3)">Sfridi già incassati, disponibili per rivendita.</div>
+        <div style="font-size:10px;color:var(--text3);margin-top:2px">In magazzino: ${fmtE(totSfRiutVal)} disponibili.</div>
+      </div>
+    </div>
+  </div>
+  ${(()=>{
+    // ═══ TOTALI PER MATERIALE — schede dinamiche ═══
+    // Aggrega i kg residui del magazzino raggruppando per nome materiale (case-insensitive).
+    // Include anche gli sfridi riutilizzabili disponibili. Le schede si creano automaticamente
+    // per ogni nuovo materiale presente in magazzino.
+    const totaliMat={};
+    mag.forEach(m=>{
+      if(m.esa||m.res<=0.001)return;
+      const key=(m.mat||'Non specificato').trim();
+      if(!totaliMat[key])totaliMat[key]={nome:key,resKg:0,nLamiere:0,nTondi:0,valore:0,sfridoKg:0};
+      totaliMat[key].resKg+=m.res;
+      totaliMat[key].valore+=m.res*(m.ckg||0);
+      if(m.tipo==='lamiera')totaliMat[key].nLamiere++;
+      else totaliMat[key].nTondi++;
+    });
+    sfRiutil.filter(s=>!s.usato&&s.peso>0).forEach(s=>{
+      const key=(s.mat||'Non specificato').trim();
+      if(!totaliMat[key])totaliMat[key]={nome:key,resKg:0,nLamiere:0,nTondi:0,valore:0,sfridoKg:0};
+      totaliMat[key].sfridoKg+=s.peso;
+      totaliMat[key].valore+=s.peso*(s.ckg||0);
+    });
+    const matList=Object.values(totaliMat).sort((a,b)=>b.resKg+b.sfridoKg-(a.resKg+a.sfridoKg));
+    if(matList.length===0)return'';
+    // Colori pastello distintivi ciclici — il materiale mantiene lo stesso colore nel tempo
+    // perché assegnato tramite hash deterministico del nome.
+    const PALETTE=[
+      {bg:'rgba(249,115,22,.08)',bd:'rgba(249,115,22,.35)',fg:'var(--accent)'},
+      {bg:'rgba(59,130,246,.08)',bd:'rgba(59,130,246,.35)',fg:'var(--blue)'},
+      {bg:'rgba(34,197,94,.08)',bd:'rgba(34,197,94,.35)',fg:'var(--green)'},
+      {bg:'rgba(234,179,8,.10)',bd:'rgba(234,179,8,.40)',fg:'var(--yellow)'},
+      {bg:'rgba(168,85,247,.10)',bd:'rgba(168,85,247,.35)',fg:'#c084fc'},
+      {bg:'rgba(239,68,68,.08)',bd:'rgba(239,68,68,.30)',fg:'var(--red)'},
+      {bg:'rgba(20,184,166,.10)',bd:'rgba(20,184,166,.35)',fg:'#2dd4bf'},
+      {bg:'rgba(236,72,153,.10)',bd:'rgba(236,72,153,.35)',fg:'#f472b6'}
+    ];
+    const colorFor=nome=>{
+      let h=0;for(let i=0;i<nome.length;i++)h=((h<<5)-h+nome.charCodeAt(i))|0;
+      return PALETTE[Math.abs(h)%PALETTE.length];
+    };
+    const totGen=matList.reduce((a,m)=>a+m.resKg+m.sfridoKg,0);
+    return`<div class="card">
+      <div class="chd"><div class="ct">Totali per Materiale</div>
+        <div style="font-size:11px;color:var(--text3)">${matList.length} tipi | ${fmt(totGen,1)} kg totali (magazzino + sfridi ♻️)</div>
+      </div>
+      <div class="mat-totals-grid">
+        ${matList.map(m=>{const c=colorFor(m.nome);const tot=m.resKg+m.sfridoKg;return`
+          <div class="mat-card" style="background:${c.bg};border-color:${c.bd}">
+            <div class="mat-card-name" style="color:${c.fg}">${esc(m.nome)}</div>
+            <div class="mat-card-kg" style="color:${c.fg}">${fmt(tot,1)} <span style="font-size:12px;font-weight:500;opacity:.85">kg</span></div>
+            <div class="mat-card-detail">
+              ${m.resKg>0?`<span>📦 ${fmt(m.resKg,1)} kg</span>`:''}
+              ${m.sfridoKg>0?`<span style="color:var(--blue)">♻️ ${fmt(m.sfridoKg,1)} kg</span>`:''}
+            </div>
+            <div class="mat-card-foot">
+              ${m.nLamiere>0?`<span title="Lamiere">L:${m.nLamiere}</span>`:''}
+              ${m.nTondi>0?`<span title="Tondi">T:${m.nTondi}</span>`:''}
+              <span style="margin-left:auto;font-weight:600;color:var(--text2)">${fmtE(m.valore)}</span>
+            </div>
+          </div>
+        `;}).join('')}
+      </div>
+    </div>`;
+  })()}
+  ${magAttivi.length===0?'':`<div class="card">
+    <div class="chd"><div class="ct">Efficienza per Materiale</div>
+      <div style="font-size:11px;color:var(--text3)">Basata sulle lavorazioni registrate</div>
+    </div>
+    <div class="tw"><table class="mob-cards">
+      <thead><tr><th>Colata</th><th>Materiale</th><th>Tipo</th><th>Peso kg</th><th>Residuo kg</th><th>€/kg</th><th>Lav.</th><th>Prodotto</th><th>Sfrido ♻️</th><th>Sfrido perso</th><th>Eff. uso</th></tr></thead>
+      <tbody>${magAttivi.map(m=>{
+        const e=magEff(m);
+        const effCol=e.eff>=90?'var(--green)':e.eff>=70?'var(--yellow)':'var(--red)';
+        return`<tr>
+          <td data-l="Colata">${esc(m.col||'—')}</td>
+          <td data-l="Materiale" style="font-weight:600;color:var(--text)">${esc(m.mat)}</td>
+          <td data-l="Tipo"><span style="font-size:10px;color:var(--text3)">${m.tipo}</span></td>
+          <td data-l="Peso kg">${fmt(m.peso,2)}</td>
+          <td data-l="Residuo kg" style="color:${m.res<m.peso*.1?'var(--red)':'var(--green)'};font-weight:600">${fmt(m.res,2)}</td>
+          <td data-l="€/kg">${fmt(m.ckg,2)}</td>
+          <td data-l="Lav." style="text-align:center">${e.nLav}</td>
+          <td data-l="Prodotto" style="color:var(--accent)">${fmt(e.ppTot,2)} kg</td>
+          <td data-l="Sfrido ♻️" style="color:var(--blue)">${e.sfRiut>0?fmt(e.sfRiut,2)+' kg':'—'}</td>
+          <td data-l="Sfrido perso" style="color:var(--red)">${e.sfPerso>0?fmt(e.sfPerso,2)+' kg':'—'}</td>
+          <td data-l="Efficienza">
+            <div style="display:flex;align-items:center;gap:6px">
+              <div style="background:var(--bg4);border-radius:3px;height:6px;width:60px;overflow:hidden">
+                <div style="height:100%;width:${e.nLav===0?100:Math.min(e.eff,100)}%;background:${effCol};border-radius:3px"></div>
+              </div>
+              <span style="font-weight:700;color:${effCol};font-size:11px">${e.nLav===0?'N/D':fmt(e.eff,0)+'%'}</span>
+            </div>
+          </td>
+        </tr>`;
+      }).join('')}</tbody></table></div>
+  </div>`}`;
+}
+
+// ═══ MAGAZZINO ═══
+// Diviso in 3 sezioni: Lamiere attive, Tondi attivi, Materiali Esauriti (collapsibile).
+// L'indice passato a mRow() è sempre l'indice reale dentro l'array mag[] — mantiene
+// la coerenza dei bindings onchange.
+function rMag(){
+  const lamiereAtt=[], tondiAtt=[], esauriti=[];
+  mag.forEach((m,i)=>{
+    const item={m,i};
+    if(m.esa) esauriti.push(item);
+    else if(m.tipo==='lamiera') lamiereAtt.push(item);
+    else tondiAtt.push(item);
+  });
+  // Totali rapidi per badge di sezione
+  const totLam=lamiereAtt.reduce((a,x)=>a+x.m.res,0);
+  const totTon=tondiAtt.reduce((a,x)=>a+x.m.res,0);
+  const valEsa=esauriti.reduce((a,x)=>a+x.m.peso*(x.m.ckg||0),0);
+
+  const renderSection=(items,emptyMsg)=>items.length===0
+    ? `<div class="empty" style="padding:20px 10px">${emptyMsg}</div>`
+    : `<div class="mag-cards"><table>
+        <thead><tr><th>Colata</th><th>Partita</th><th>Materiale</th><th>Tipo</th><th>Dimensioni mm</th><th>Sup m²</th><th>Vol m³</th><th>Dens kg/m³</th><th>Peso kg</th><th>€/kg</th><th>Valore</th><th>Residuo kg</th><th>Data Ins.</th><th>Data Esaur.</th><th>Stato</th><th>Sfrido ♻️</th><th>Sfrido 🗑</th><th></th></tr></thead>
+        <tbody>${items.map(({m,i})=>mRow(m,i)).join('')}</tbody></table></div>`;
+
+  return`
+  <div class="card"><div class="chd"><div class="ct">Magazzino Materiali</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button class="btn btn-p btn-s" onclick="S.modal={type:'add'};render()">+ Aggiungi</button>
+      <button class="btn btn-bl btn-s" onclick="snap()">Snapshot</button>
+      <button class="btn btn-g btn-s" onclick="S.modal={type:'snaps'};render()">Storico Snap</button>
+    </div></div>
+    ${mag.length===0?'<div class="empty">Magazzino vuoto — premi "+ Aggiungi" per iniziare</div>':''}
+  </div>
+
+  ${lamiereAtt.length>0 || tondiAtt.length>0 || mag.length===0 ? `
+  <div class="card">
+    <div class="chd">
+      <div class="ct" style="display:flex;align-items:center;gap:10px">
+        <span style="width:8px;height:8px;border-radius:50%;background:var(--accent);display:inline-block"></span>
+        📦 Lamiere Attive
+      </div>
+      <div style="font-size:11px;color:var(--text2);font-family:'Space Mono',monospace">
+        ${lamiereAtt.length} in magazzino · ${fmt(totLam,1)} kg disponibili
+      </div>
+    </div>
+    ${renderSection(lamiereAtt,'Nessuna lamiera attiva')}
+  </div>
+
+  <div class="card">
+    <div class="chd">
+      <div class="ct" style="display:flex;align-items:center;gap:10px">
+        <span style="width:8px;height:8px;border-radius:50%;background:var(--blue);display:inline-block"></span>
+        🔩 Tondi Attivi
+      </div>
+      <div style="font-size:11px;color:var(--text2);font-family:'Space Mono',monospace">
+        ${tondiAtt.length} in magazzino · ${fmt(totTon,1)} kg disponibili
+      </div>
+    </div>
+    ${renderSection(tondiAtt,'Nessun tondo attivo')}
+  </div>
+  `:''}
+
+  ${esauriti.length>0?`
+  <div class="card" style="border-color:rgba(239,68,68,.2)">
+    <div class="chd" style="cursor:pointer" onclick="S.magEsaOpen=!S.magEsaOpen;renderPage()">
+      <div class="ct" style="display:flex;align-items:center;gap:10px;color:var(--text2)">
+        <span style="width:8px;height:8px;border-radius:50%;background:var(--text3);display:inline-block;opacity:.6"></span>
+        🗄 Materiali Esauriti
+        <span style="font-size:10px;color:var(--text3);font-weight:400">${S.magEsaOpen?'▼':'▶'}</span>
+      </div>
+      <div style="font-size:11px;color:var(--text3);font-family:'Space Mono',monospace">
+        ${esauriti.length} esauriti${valEsa>0?` · storico val. ${fmtE(valEsa)}`:''}
+      </div>
+    </div>
+    ${S.magEsaOpen?`<div style="font-size:11px;color:var(--text3);margin-bottom:12px;padding:8px 12px;background:var(--bg3);border-radius:6px">
+      💡 I materiali esauriti vengono mantenuti nello storico ma non appaiono nel menu delle nuove lavorazioni.
+      Usa <strong>↩</strong> per ripristinarli in magazzino se hanno ancora residuo utilizzabile.
+    </div>
+    ${renderSection(esauriti,'Nessun materiale esaurito')}`:''}
+  </div>
+  `:''}`;
+}
+function mRow(m,i){
+  const v=m.peso*(m.ckg||0);
+  const sfProd=lav.filter(l=>l.sid===m.id&&l.sf&&l.psf>0);
+  const sfRiutPeso=sfProd.filter(l=>l.sfu).reduce((a,l)=>a+l.psf,0);
+  const sfPersoPeso=sfProd.filter(l=>!l.sfu).reduce((a,l)=>a+l.psf,0);
+  return`<tr class="${m.esa?'exh':''}">
+    <td data-l="Colata"><input class="ie ie-w" value="${esc(m.col||'')}" onchange="mag[${i}].col=this.value;save();renderPage()"></td>
+    <td data-l="Partita"><input class="ie ie-w" value="${esc(m.part||'')}" onchange="mag[${i}].part=this.value;save();renderPage()" placeholder="—"></td>
+    <td data-l="Materiale"><input class="ie ie-w" value="${esc(m.mat||'')}" onchange="mag[${i}].mat=this.value;save();renderPage()"></td>
+    <td data-l="Tipo"><select class="ie" onchange="chTipo(${i},this.value)"><option value="lamiera" ${m.tipo==='lamiera'?'selected':''}>Lamiera</option><option value="tondo" ${m.tipo==='tondo'?'selected':''}>Tondo</option></select></td>
+    <td data-l="Dim mm">${m.tipo==='lamiera'
+      ?`<input class="ie ie-n" value="${m.dim.l}" onchange="chDim(${i},'l',this.value)">x<input class="ie ie-n" value="${m.dim.w}" onchange="chDim(${i},'w',this.value)">x<input class="ie ie-n" value="${m.dim.t}" onchange="chDim(${i},'t',this.value)">`
+      :`Ø<input class="ie ie-n" value="${m.dim.de}" onchange="chDim(${i},'de',this.value)">x<input class="ie ie-n" value="${m.dim.lu}" onchange="chDim(${i},'lu',this.value)">`}</td>
+    <td data-l="Sup m²">${fmt(m.sup,4)}</td><td data-l="Vol m³">${fmt(m.vol,6)}</td>
+    <td data-l="Dens kg/m³"><input class="ie" value="${m.dens||7850}" onchange="mag[${i}].dens=+this.value;recalcOne(${i});save();renderPage()"></td>
+    <td data-l="Peso kg">${fmt(m.peso,3)}</td>
+    <td data-l="€/kg"><input class="ie" value="${fmt(m.ckg,2)}" onchange="mag[${i}].ckg=+this.value;save();renderPage()"></td>
+    <td data-l="Valore" style="font-weight:600">${fmtE(v)}</td>
+    <td data-l="Residuo kg" style="font-weight:700;color:${m.res<m.peso*.1?'var(--red)':'var(--green)'}">${fmt(m.res,3)}</td>
+    <td data-l="Inserito" style="font-size:10px;color:var(--text3)">${esc(m.dataIns||'—')}</td>
+    <td data-l="Esaurito" style="font-size:10px;color:${m.esa?'var(--red)':'var(--text3)'}">${esc(m.dataEsaurimento||'—')}</td>
+    <td data-l="Stato">${m.esa?'<span class="badge b-ex">Esaurito</span>':'<span class="badge b-ok">OK</span>'}</td>
+    <td data-l="Sfrido ♻️" style="font-size:10px;color:var(--blue)">${sfRiutPeso>0?`♻️ ${fmt(sfRiutPeso,2)}kg`:''}</td>
+    <td data-l="Sfrido 🗑" style="font-size:10px;color:var(--red)">${sfPersoPeso>0?`🗑 ${fmt(sfPersoPeso,2)}kg`:''}</td>
+    <td style="display:flex;gap:4px">
+      <button class="btn btn-s btn-bl" onclick="dupMag(${i})" title="Duplica">⧉</button>
+      <button class="btn btn-s ${m.esa?'btn-gr':'btn-d'}" onclick="toggleEsaManuale(${i})">${m.esa?'↩':'✕'}</button>
+      <button class="btn btn-s btn-d" onclick="delMag(${i})" title="Elimina">🗑</button>
+    </td>
+  </tr>`;
+}
+window.delMag=function(i){askPin('PIN per eliminare riga magazzino',()=>{mag.splice(i,1);recalc();save();render();});};
+// Toggle manuale esaurito/ripristinato dal pulsante ✕ nel magazzino o ↩ dalla sezione Esauriti.
+// Quando esaurisce: setta _esaManuale=true così recalc() non lo riapre automaticamente.
+// Quando ripristina: rimuove _esaManuale e fa recalc() per ricalcolare il residuo reale.
+window.toggleEsaManuale=function(i){
+  const m=mag[i];if(!m)return;
+  if(m.esa){
+    // Ripristino: torna in magazzino attivo
+    m.esa=false;
+    m.dataEsaurimento='';
+    m._esaManuale=false;
+    // Rimuovi l'eventuale sfrido perso "manuale da esaurimento" collegato a questo mag
+    // (riconoscibile da flag _fromEsa e sid === m.id)
+    const sfEsaIdx = lav.findIndex(l=>l._sfPersoManuale && l._fromEsa && l.sid===m.id);
+    if(sfEsaIdx>=0) lav.splice(sfEsaIdx,1);
+    recalc(); // ricalcola residuo corretto dalle lavorazioni
+  } else {
+    // Esaurimento manuale
+    // Se c'è residuo positivo, genera automaticamente un record "Sfrido Perso manuale"
+    // in modo che il peso finisca nelle sezioni Sfridi Persi e Dashboard "Sfrido perso totale".
+    if(m.res>0.001){
+      const pesoPerso=+m.res.toFixed(3);
+      lav.push({
+        id:uid(),
+        date:new Date().toLocaleString('it-IT'),
+        cli:'(sistema)',
+        com:'Esaurimento manuale',
+        sid:m.id,
+        sfSid:null,
+        mat:m.mat,
+        col:m.col,
+        part:m.part||'',
+        tipo:m.tipo,
+        pdesc:'Residuo esaurito manualmente',
+        sup:0,vol:0,
+        pp:0,
+        sf:{tipo:'esaurimento',peso:pesoPerso},
+        sfu:false,
+        psf:pesoPerso,
+        psot:pesoPerso,  // tutto il residuo esce dal magazzino
+        ckg:m.ckg||0,
+        ctot:0,
+        dens:m.dens||7850,
+        spessore:m.tipo==='lamiera'?m.dim.t:m.dim.de,
+        fromSfrido:false,
+        _sfPersoManuale:true,
+        _fromEsa:true     // flag: creato automaticamente da esaurimento manuale
+      });
+    }
+    m.esa=true;
+    m._esaManuale=true;
+    m.res=0;
+    if(!m.dataEsaurimento)m.dataEsaurimento=new Date().toLocaleDateString('it-IT');
+  }
+  save();render();
+};
+window.dupMag=function(i){
+  const orig=mag[i];
+  const dup={...JSON.parse(JSON.stringify(orig)),id:uid(),col:orig.col?orig.col+'-COPIA':'',res:0,esa:false,dataEsaurimento:'',dataIns:new Date().toLocaleDateString('it-IT')};
+  calcItem(dup);dup.res=dup.peso;mag.splice(i+1,0,dup);save();render();
+};
+window.chTipo=function(i,v){mag[i].tipo=v;mag[i].dim=v==='lamiera'?{l:0,w:0,t:0}:{de:0,lu:0};recalcOne(i);save();render();}
+window.chDim=function(i,k,v){mag[i].dim[k]=+v||0;recalcOne(i);save();renderPage();}
+window.snap=function(){
+  const d=mag.map(m=>({col:m.col,mat:m.mat,tipo:m.tipo,peso:m.peso,res:m.res,ckg:m.ckg,esa:m.esa}));
+  snaps.push({date:new Date().toLocaleString('it-IT'),data:d});save();alert('Snapshot salvato!');
+}
+
+// ═══ SFRIDI ═══
+// FIX: "Aggiungi" apre modale con selezione da magazzino + forma + calcolo peso
+function rSfridi(){
+  const sfDisp=sfRiutil.filter(s=>!s.usato);
+  const sfUsati=sfRiutil.filter(s=>s.usato);
+  const totPeso=sfDisp.reduce((a,s)=>a+s.peso,0);
+  const totVal=sfDisp.reduce((a,s)=>a+s.peso*(s.ckg||0),0);
+  // Sfridi persi: tutti (da lavorazioni reali + manuali). I manuali hanno _sfPersoManuale=true
+  const sfPersiLav=lav.filter(l=>l.sf&&!l.sfu&&l.psf>0);
+  const totPerso=sfPersiLav.reduce((a,l)=>a+l.psf,0);
+  return`
+  <div class="card"><div class="chd"><div class="ct">Sfridi Riutilizzabili</div>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span style="font-size:11px;color:var(--green)">Disponibili: ${fmt(totPeso,3)} kg | Valore: ${fmtE(totVal)}</span>
+      <button class="btn btn-p btn-s" onclick="S.modal={type:'addsf'};render()">+ Aggiungi Sfrido</button>
+    </div>
+  </div>
+  ${sfDisp.length===0?'<div class="empty">Nessuno sfrido riutilizzabile disponibile</div>':`<div class="tw"><table class="mob-cards">
+    <thead><tr><th>Data</th><th>Materiale</th><th>Colata</th><th>Tipo</th><th>Forma</th><th>Dimensioni</th><th>Spess mm</th><th>Peso kg</th><th>€/kg</th><th>Valore</th><th>Note</th><th></th></tr></thead>
+    <tbody>${sfDisp.map((s,_)=>{const i=sfRiutil.indexOf(s);return`<tr>
+      <td data-l="Data" style="font-size:10px;color:var(--text3)">${esc(s.date||'')}</td>
+      <td data-l="Materiale" style="font-weight:600;color:var(--text)">${esc(s.mat||'')}</td>
+      <td data-l="Colata">${esc(s.col||'')}</td>
+      <td data-l="Tipo">${esc(s.tipo||'')}</td>
+      <td data-l="Forma"><span style="font-size:10px;color:var(--blue)">${esc(s.forma||'—')}</span></td>
+      <td data-l="Dim" style="font-size:10px">${esc(s.desc||'')}</td>
+      <td data-l="Spess mm">${s.spessore||'—'}</td>
+      <td data-l="Peso kg" style="font-weight:700;color:var(--green)">${fmt(s.peso,3)}</td>
+      <td data-l="€/kg"><input class="ie" type="number" value="${fmt(s.ckg,2)}" onchange="sfRiutil[${i}].ckg=+this.value;save();renderPage()"></td>
+      <td data-l="Valore" style="font-weight:600">${fmtE(s.peso*(s.ckg||0))}</td>
+      <td data-l="Note"><input class="ie ie-w" value="${esc(s.note||'')}" onchange="sfRiutil[${i}].note=this.value;save()"></td>
+      <td><button class="btn btn-s btn-d" onclick="delSfRiutil(${i})">🗑</button></td>
+    </tr>`;}).join('')}</tbody></table></div>`}
+  ${sfUsati.length>0?`<div style="margin-top:10px;font-size:11px;color:var(--text3)">Sfridi consumati: ${sfUsati.length} (nascosti)</div>`:''}
+  </div>
+
+  <div class="card"><div class="chd"><div class="ct">Sfridi Persi</div>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span style="font-size:11px;color:var(--red)">Tot perso: ${fmt(totPerso,3)} kg</span>
+      <button class="btn btn-d btn-s" onclick="S.modal={type:'addsfperso'};render()">+ Aggiungi Sfrido Perso</button>
+    </div>
+  </div>
+  ${sfPersiLav.length===0?'<div class="empty">Nessuno sfrido perso registrato</div>':`<div class="tw"><table class="mob-cards">
+    <thead><tr><th>Data</th><th>Origine</th><th>Cliente</th><th>Commessa</th><th>Materiale</th><th>Pezzo/Note</th><th>Sfrido perso kg</th><th></th></tr></thead>
+    <tbody>${sfPersiLav.map(l=>{const idx=lav.indexOf(l);const origine=l._sfPersoManuale?'<span style="font-size:10px;padding:2px 6px;border-radius:8px;background:var(--red-bg);color:var(--red)">Manuale</span>':'<span style="font-size:10px;padding:2px 6px;border-radius:8px;background:var(--blue-bg);color:var(--blue)">Lavorazione</span>';return`<tr>
+      <td data-l="Data" style="font-size:10px;color:var(--text3)">${esc(l.date)}</td>
+      <td data-l="Origine">${origine}</td>
+      <td data-l="Cliente">${esc(l.cli)}</td>
+      <td data-l="Commessa">${esc(l.com)}</td>
+      <td data-l="Materiale">${esc(l.mat)}${l.col?' / '+esc(l.col):''}</td>
+      <td data-l="Pezzo" style="font-size:10px">${esc(l.pdesc)}</td>
+      <td data-l="Sfrido perso" style="color:var(--red);font-weight:700">${fmt(l.psf,3)}</td>
+      <td>${l._sfPersoManuale?`<button class="btn btn-s btn-d" onclick="delSfPersoManuale(${idx})">🗑</button>`:''}</td>
+    </tr>`;}).join('')}</tbody></table></div>`}
+  </div>`;
+}
+// Elimina sfrido perso manuale e ripristina il residuo del magazzino
+window.delSfPersoManuale=function(idx){
+  askPin('PIN per eliminare sfrido perso',()=>{
+    const l=lav[idx];
+    if(!l||!l._sfPersoManuale){render();return;}
+    lav.splice(idx,1);
+    // Recalc completo per ripristinare il residuo
+    recalc();
+    save();
+    render();
+  });
+};
+window.delSfRiutil=function(i){askPin('PIN per eliminare sfrido',()=>{sfRiutil.splice(i,1);save();render();});};
+
+// ═══ MODALE AGGIUNGI SFRIDO ═══
+// Selezione materiale da magazzino + forma + calcolo automatico peso
+function rAddSfModal(){
+  const magOpt=mag.filter(m=>!m.esa&&m.res>0.001).map(m=>`<option value="${m.id}">[${m.tipo==='lamiera'?'L':'T'}] ${esc(m.mat)} — ${esc(m.col||'—')} sp.${m.tipo==='lamiera'?m.dim.t:m.dim.de}mm (${fmt(m.res,1)}kg, ${fmt(m.ckg,2)}€/kg)</option>`).join('');
+  return`<div class="mo"><div class="md fade" onclick="event.stopPropagation()" style="max-width:560px">
+    <div class="md-t">♻️ Aggiungi Sfrido Riutilizzabile</div>
+    <div class="fg">
+      <div class="fi s2"><label class="fl">Provenienza (materiale magazzino)</label>
+        <select class="fx" id="asf_mag" onchange="asfMagChange()">
+          <option value="">— Seleziona materiale origine —</option>
+          ${magOpt}
+          <option value="__manuale__">✏️ Inserimento manuale (nessun materiale in magazzino)</option>
+        </select>
+      </div>
+    </div>
+    <div id="asf_info" style="display:none">
+      <div class="fg">
+        <div class="fi"><label class="fl">Data</label><input class="fx" id="asf_date" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
+        <div class="fi"><label class="fl">Note</label><input class="fx" id="asf_note" placeholder="es. angolo dx"></div>
+      </div>
+      <div id="asf_dens_row" style="display:none" class="fg">
+        <div class="fi"><label class="fl">Densità kg/m³</label><input class="fx" id="asf_dens" type="number" value="7850"></div>
+        <div class="fi"><label class="fl">€/kg</label><input class="fx" id="asf_ckg" type="number" placeholder="0.00"></div>
+      </div>
+      <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px">Forma dello sfrido</div>
+      <div class="fg">
+        <div class="fi s2"><label class="fl">Tipo forma</label>
+          <select class="fx" id="asf_forma" onchange="asfFormaChange()">
+            <option value="lamiera_rett">Lamiera rettangolare (L × W × spessore)</option>
+            <option value="disco">Disco pieno (Ø esterno × spessore)</option>
+            <option value="anello">Anello (Ø esterno × Ø interno × spessore)</option>
+            <option value="peso_diretto">Peso diretto (inserisci kg manualmente)</option>
+          </select>
+        </div>
+      </div>
+      <div id="asf_dims" class="fg" style="margin-bottom:10px"></div>
+      <div id="asf_calc" class="sinfo" style="display:none;margin-bottom:10px"></div>
+    </div>
+    <div class="md-footer" style="margin-top:14px">
+      <button class="btn btn-g" onclick="S.modal=null;render()">Annulla</button>
+      <button class="btn btn-p" id="asf_save" disabled onclick="asfSalva()">💾 Salva Sfrido</button>
+    </div>
+  </div></div>`;
+}
+window.asfMagChange=function(){
+  const v=document.getElementById('asf_mag').value;
+  const info=document.getElementById('asf_info');
+  const densRow=document.getElementById('asf_dens_row');
+  if(!v){info.style.display='none';return;}
+  info.style.display='block';
+  if(v==='__manuale__'){densRow.style.display='grid';}
+  else{densRow.style.display='none';}
+  asfFormaChange();
+};
+window.asfFormaChange=function(){
+  const forma=document.getElementById('asf_forma').value;
+  const dims=document.getElementById('asf_dims');
+  if(forma==='lamiera_rett'){
+    dims.innerHTML=`
+      <div class="fi"><label class="fl">Lato 1 / Lungh (mm)</label><input class="fx" id="asf_d1" type="number" placeholder="es. 500" oninput="asfCalc()"></div>
+      <div class="fi"><label class="fl">Lato 2 / Largh (mm)</label><input class="fx" id="asf_d2" type="number" placeholder="es. 300" oninput="asfCalc()"></div>
+      <div class="fi"><label class="fl">Spessore (mm)</label><input class="fx" id="asf_sp" type="number" placeholder="es. 10" oninput="asfCalc()"></div>`;
+  }else if(forma==='disco'){
+    dims.innerHTML=`
+      <div class="fi"><label class="fl">Ø Esterno (mm)</label><input class="fx" id="asf_d1" type="number" placeholder="es. 200" oninput="asfCalc()"></div>
+      <div class="fi"><label class="fl">Spessore (mm)</label><input class="fx" id="asf_sp" type="number" placeholder="es. 10" oninput="asfCalc()"></div>`;
+  }else if(forma==='anello'){
+    dims.innerHTML=`
+      <div class="fi"><label class="fl">Ø Esterno (mm)</label><input class="fx" id="asf_d1" type="number" placeholder="es. 200" oninput="asfCalc()"></div>
+      <div class="fi"><label class="fl">Ø Interno (mm)</label><input class="fx" id="asf_d2" type="number" placeholder="es. 100" oninput="asfCalc()"></div>
+      <div class="fi"><label class="fl">Spessore (mm)</label><input class="fx" id="asf_sp" type="number" placeholder="es. 10" oninput="asfCalc()"></div>`;
+  }else if(forma==='peso_diretto'){
+    dims.innerHTML=`
+      <div class="fi"><label class="fl">Peso kg</label><input class="fx" id="asf_peso_dir" type="number" placeholder="es. 5.250" oninput="asfCalc()"></div>
+      <div class="fi"><label class="fl">Descrizione dimensioni</label><input class="fx" id="asf_desc_dir" type="text" placeholder="es. 400x200mm"></div>`;
+  }
+  asfCalc();
+};
+window.asfCalc=function(){
+  const magVal=document.getElementById('asf_mag').value;
+  let dens=7850,ckg=0,mat='',col='',tipo='lamiera',spessore=0;
+  if(magVal&&magVal!=='__manuale__'){
+    const m=mag.find(x=>x.id===magVal);
+    if(m){dens=m.dens||7850;ckg=m.ckg||0;mat=m.mat;col=m.col||'';tipo=m.tipo;spessore=m.tipo==='lamiera'?m.dim.t:m.dim.de;}
+  }else if(magVal==='__manuale__'){
+    dens=+(document.getElementById('asf_dens')?.value||7850);
+    ckg=+(document.getElementById('asf_ckg')?.value||0);
+  }
+  const forma=document.getElementById('asf_forma').value;
+  const calc=document.getElementById('asf_calc');
+  const saveBtn=document.getElementById('asf_save');
+  let peso=0,desc='',sup=0,vol=0;
+  if(forma==='peso_diretto'){
+    peso=+(document.getElementById('asf_peso_dir')?.value||0);
+    desc=document.getElementById('asf_desc_dir')?.value||'diretto';
+    spessore=0;
+  }else{
+    const d1=+(document.getElementById('asf_d1')?.value||0);
+    const d2=+(document.getElementById('asf_d2')?.value||0);
+    const sp=+(document.getElementById('asf_sp')?.value||0);
+    if(!sp){calc.style.display='none';saveBtn.disabled=true;return;}
+    spessore=sp;
+    if(forma==='lamiera_rett'){
+      if(!d1||!d2){calc.style.display='none';saveBtn.disabled=true;return;}
+      sup=(d1/1000)*(d2/1000);vol=sup*(sp/1000);desc=`${d1}×${d2}×${sp}mm`;
+    }else if(forma==='disco'){
+      if(!d1){calc.style.display='none';saveBtn.disabled=true;return;}
+      const r=(d1/1000)/2;sup=Math.PI*r*r;vol=sup*(sp/1000);desc=`Ø${d1}×${sp}mm`;
+    }else if(forma==='anello'){
+      if(!d1||!d2||d2>=d1){calc.style.display='none';saveBtn.disabled=true;return;}
+      const re=(d1/1000)/2,ri=(d2/1000)/2;sup=Math.PI*(re*re-ri*ri);vol=sup*(sp/1000);desc=`Ø${d1}/Ø${d2}×${sp}mm`;
+    }
+    peso=+(vol*dens).toFixed(3);
+  }
+  if(peso<=0){calc.style.display='none';saveBtn.disabled=true;return;}
+  calc.style.display='block';saveBtn.disabled=false;
+  calc.innerHTML=`<div class="sr"><span>Forma:</span><span>${esc(desc)}</span></div>
+    ${sup>0?`<div class="sr"><span>Superficie:</span><span>${fmt(sup,4)} m²</span></div>`:''} 
+    ${vol>0?`<div class="sr"><span>Volume:</span><span>${fmt(vol,6)} m³</span></div>`:''}
+    <div class="sr"><span><strong>Peso calcolato:</strong></span><span style="color:var(--green);font-weight:700"><strong>${fmt(peso,3)} kg</strong></span></div>
+    <div class="sr"><span>Valore:</span><span style="color:var(--accent)">${fmtE(peso*ckg)}</span></div>`;
+};
+window.asfSalva=function(){
+  const magVal=document.getElementById('asf_mag').value;
+  let dens=7850,ckg=0,mat='',col='',tipo='lamiera',spessore=0;
+  if(magVal&&magVal!=='__manuale__'){
+    const m=mag.find(x=>x.id===magVal);
+    if(m){dens=m.dens||7850;ckg=m.ckg||0;mat=m.mat;col=m.col||'';tipo=m.tipo;spessore=m.tipo==='lamiera'?m.dim.t:m.dim.de;}
+  }else if(magVal==='__manuale__'){
+    dens=+(document.getElementById('asf_dens')?.value||7850);
+    ckg=+(document.getElementById('asf_ckg')?.value||0);
+  }
+  const forma=document.getElementById('asf_forma').value;
+  const note=document.getElementById('asf_note')?.value||'';
+  const dateVal=document.getElementById('asf_date')?.value||new Date().toISOString().slice(0,10);
+  let peso=0,desc='',formaNome=forma;
+  if(forma==='peso_diretto'){
+    peso=+(document.getElementById('asf_peso_dir')?.value||0);
+    desc=document.getElementById('asf_desc_dir')?.value||'diretto';
+    formaNome='peso diretto';
+  }else{
+    const d1=+(document.getElementById('asf_d1')?.value||0);
+    const d2=+(document.getElementById('asf_d2')?.value||0);
+    const sp=+(document.getElementById('asf_sp')?.value||0);
+    spessore=sp;
+    if(forma==='lamiera_rett'){sup=(d1/1000)*(d2/1000);var vol=sup*(sp/1000);desc=`${d1}×${d2}×${sp}mm`;formaNome='rettangolare';}
+    else if(forma==='disco'){const r=(d1/1000)/2;sup=Math.PI*r*r;var vol=sup*(sp/1000);desc=`Ø${d1}×${sp}mm`;formaNome='disco';}
+    else if(forma==='anello'){const re=(d1/1000)/2,ri=(d2/1000)/2;sup=Math.PI*(re*re-ri*ri);var vol=sup*(sp/1000);desc=`Ø${d1}/Ø${d2}×${sp}mm`;formaNome='anello';}
+    peso=+(vol*dens).toFixed(3);
+  }
+  if(peso<=0)return;
+  sfRiutil.push({id:uid(),date:new Date(dateVal).toLocaleDateString('it-IT'),mat,col,tipo,forma:formaNome,desc,peso,ckg,spessore,dens,note,usato:false,manuale:true,magSrc:magVal!=='__manuale__'?magVal:null});
+  save();S.modal=null;render();
+};
+
+// ═══ LAVORAZIONE ═══
+// FIX: griglia dimensioni allineata; sfrido con forme corrette (rett/disco/anello)
+function rLav(){
+  const av=mag.filter(m=>!m.esa&&m.res>0.001);
+  const la=av.filter(m=>m.tipo==='lamiera'),to=av.filter(m=>m.tipo==='tondo');
+  const sfLa=sfRiutil.filter(s=>!s.usato&&s.tipo==='lamiera'&&s.peso>0);
+  const sfTo=sfRiutil.filter(s=>!s.usato&&s.tipo==='tondo'&&s.peso>0);
+  return`<div class="card"><div class="chd"><div class="ct">Nuova Lavorazione</div></div>
+    <div class="fg">
+      <div class="fi s2"><label class="fl">Materiale / Sfrido sorgente</label><select class="fx" id="lv_s" onchange="lvU()"><option value="">— Seleziona —</option>
+        ${la.length?`<optgroup label="── LAMIERE MAGAZZINO ──">${la.map(m=>`<option value="mag:${m.id}">[L] ${esc(m.mat)} sp.${m.dim.t}mm — Col:${esc(m.col||'—')}${m.part?' · Part:'+esc(m.part):''} (${fmt(m.res,1)}kg)</option>`).join('')}</optgroup>`:''}
+        ${to.length?`<optgroup label="── TONDI MAGAZZINO ──">${to.map(m=>`<option value="mag:${m.id}">[T] ${esc(m.mat)} Ø${m.dim.de}mm — Col:${esc(m.col||'—')}${m.part?' · Part:'+esc(m.part):''} (${fmt(m.res,1)}kg)</option>`).join('')}</optgroup>`:''}
+        ${sfLa.length?`<optgroup label="── ♻️ SFRIDI LAMIERA ──">${sfLa.map(s=>`<option value="sf:${s.id}">♻️[SfL] ${esc(s.mat)} ${esc(s.desc||'')} (${fmt(s.peso,1)}kg)</option>`).join('')}</optgroup>`:''}
+        ${sfTo.length?`<optgroup label="── ♻️ SFRIDI TONDO ──">${sfTo.map(s=>`<option value="sf:${s.id}">♻️[SfT] ${esc(s.mat)} ${esc(s.desc||'')} (${fmt(s.peso,1)}kg)</option>`).join('')}</optgroup>`:''}
+      </select></div>
+      <div class="fi"><label class="fl">Cliente</label><input class="fx" id="lv_cl" placeholder="Nome cliente" oninput="lvP()"></div>
+      <div class="fi"><label class="fl">N° Commessa</label><input class="fx" id="lv_co" placeholder="COM-001" oninput="lvP()"></div>
+    </div>
+    <div id="lvD"></div>
+    <div id="lvS" style="display:none"></div>
+    <div id="lvPr"></div>
+    <button class="btn btn-p" id="lvB" disabled style="width:100%;margin-top:10px" onclick="subLav()">✅ Registra Lavorazione</button>
+  </div>`;
+}
+
+function lvGetSel(){
+  const val=$('#lv_s')?.value||'';
+  if(!val)return null;
+  if(val.startsWith('mag:')){
+    const m=mag.find(x=>x.id===val.slice(4));
+    return m?{...m,_isSf:false,_sfId:null,_resDisp:m.res}:null;
+  }
+  if(val.startsWith('sf:')){
+    const s=sfRiutil.find(x=>x.id===val.slice(3));if(!s)return null;
+    let spessore=s.spessore||0;
+    if(!spessore&&s.lavId){const lo=lav.find(x=>x.id===s.lavId);if(lo)spessore=lo.spessore||0;}
+    if(!spessore){const mo=mag.find(x=>x.mat===s.mat&&x.col===s.col&&x.tipo===s.tipo);if(mo)spessore=mo.tipo==='lamiera'?mo.dim.t:mo.dim.de;}
+    const dimCalc=s.tipo==='lamiera'?{l:9999,w:9999,t:spessore||1}:{de:spessore||50,lu:9999};
+    return{id:s.id,mat:s.mat,col:s.col,tipo:s.tipo,dim:dimCalc,dens:s.dens||7850,peso:s.peso,res:s.peso,ckg:s.ckg||0,spessore,_isSf:true,_sfId:s.id,_sfObj:s,_resDisp:s.peso};
+  }
+  return null;
+}
+
+window.lvU=function(){
+  const sh=lvGetSel();const dd=$('#lvD');
+  if(!sh){dd.innerHTML='';$('#lvS').style.display='none';$('#lvPr').innerHTML='';$('#lvB').disabled=true;return;}
+  const spInfo=sh._isSf&&sh.spessore?` | Spess: <strong>${sh.spessore}mm</strong>`:'';
+  const info=sh._isSf?`Sfrido ♻️ — ${esc(sh._sfObj.desc||'')}`:
+    (sh.tipo==='lamiera'?`${sh.dim.l}×${sh.dim.w}×${sh.dim.t}mm`:`Ø${sh.dim.de}×${sh.dim.lu}mm`);
+
+  // Selettore geometria: solo per lamiere — rettangolare (default) o disco.
+  // Per tondi: sempre lunghezza del tondo.
+  const formaSel = sh.tipo==='lamiera' ? `
+    <div class="fi s2"><label class="fl">Forma del taglio</label>
+      <select class="fx" id="lv_forma" onchange="lvUForma()">
+        <option value="rett" selected>Rettangolo (L × W)</option>
+        <option value="disco">Disco (Ø esterno)</option>
+      </select>
+    </div>` : '';
+
+  // Info tag: Colata + Partita, evidente per distinguere lamiere simili
+  const idTag = !sh._isSf ? `<span style="display:inline-block;padding:1px 7px;border-radius:10px;background:var(--bg4);color:var(--text);font-family:'Space Mono',monospace;font-size:10px;margin-right:6px">Col:${esc(sh.col||'—')}${sh.part?' · Part:'+esc(sh.part):''}</span>` : '';
+  dd.innerHTML=`<div class="sinfo">${sh._isSf?'<span style="color:var(--blue);font-weight:700">♻️ SFRIDO</span> — ':''}${idTag}<strong>${esc(sh.mat)}</strong> — ${info}${spInfo} | ρ${sh.dens} kg/m³ | Disp: <strong style="color:var(--green)">${fmt(sh._resDisp,3)} kg</strong></div>
+    <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Dimensioni lamiera da tagliare per il pezzo</div>
+    <div class="fg">${formaSel}</div>
+    <div class="fg" id="lv_dims"></div>
+    <div id="lvPI"></div>`;
+  // Popola i campi dimensione
+  lvUForma();
+}
+
+// Cambio forma taglio: rigenera gli input dimensione.
+window.lvUForma = function(){
+  const sh=lvGetSel();const dims=document.getElementById('lv_dims');
+  if(!sh||!dims)return;
+  const forma = sh.tipo==='lamiera' ? (document.getElementById('lv_forma')?.value || 'rett') : 'tondo';
+  if(sh.tipo==='lamiera'){
+    if(forma==='rett'){
+      dims.innerHTML = `
+        <div class="fi"><label class="fl">Lato 1 (mm)</label><input class="fx" id="lv_a" type="number" placeholder="lunghezza" oninput="lvC()"></div>
+        <div class="fi"><label class="fl">Lato 2 (mm)</label><input class="fx" id="lv_b" type="number" placeholder="larghezza" oninput="lvC()"></div>
+        ${sh._isSf?`<div class="fi"><label class="fl">Spessore mm${sh.spessore?' ('+sh.spessore+')':''}</label><input class="fx" id="lv_sp" type="number" value="${sh.spessore||''}" oninput="lvC()"></div>`:''}`;
+    } else {
+      // Disco
+      dims.innerHTML = `
+        <div class="fi"><label class="fl">Ø Esterno (mm)</label><input class="fx" id="lv_a" type="number" placeholder="es. 300" oninput="lvC()"></div>
+        ${sh._isSf?`<div class="fi"><label class="fl">Spessore mm${sh.spessore?' ('+sh.spessore+')':''}</label><input class="fx" id="lv_sp" type="number" value="${sh.spessore||''}" oninput="lvC()"></div>`:''}`;
+    }
+  } else {
+    // Tondo: una sola dimensione (lunghezza)
+    dims.innerHTML = `
+      <div class="fi"><label class="fl">Lunghezza pezzo (mm)</label><input class="fx" id="lv_a" type="number" placeholder="lunghezza" oninput="lvC()"></div>
+      ${sh._isSf?`<div class="fi"><label class="fl">Ø / Spessore mm${sh.spessore?' ('+sh.spessore+')':''}</label><input class="fx" id="lv_sp" type="number" value="${sh.spessore||''}" oninput="lvC()"></div>`:''}`;
+  }
+  lvC();
+};
+
+window.lvC=function(){
+  const sh=lvGetSel();if(!sh)return;
+  const a=+(($('#lv_a')?.value)||0),b=+(($('#lv_b')?.value)||0);
+  const spInput=+(($('#lv_sp')?.value)||0);
+  const spEff=sh._isSf?(spInput||sh.spessore||1):(sh.tipo==='lamiera'?sh.dim.t:sh.dim.de);
+  if(a<=0){$('#lvPI').innerHTML='';$('#lvS').style.display='none';$('#lvPr').innerHTML='';$('#lvB').disabled=true;return;}
+  let sup,vol,peso,desc;
+  const formaLav = sh.tipo==='lamiera' ? (document.getElementById('lv_forma')?.value || 'rett') : 'tondo';
+  if(sh.tipo==='lamiera'){
+    const sp=spEff/1000;
+    if(formaLav==='disco'){
+      // Disco: a = Ø esterno. Area = π × (Ø/2)²
+      const r=(a/1000)/2;sup=Math.PI*r*r;desc=`Ø${a}×${spEff}mm`;
+    } else if(b>0){
+      sup=(a/1000)*(b/1000);desc=`${a}×${b}×${spEff}mm`;
+    } else {
+      sup=(a/1000)*(a/1000);desc=`${a}×${a}×${spEff}mm`;
+    }
+    vol=sup*sp;
+  }else{
+    const r=(spEff/1000)/2;sup=Math.PI*r*r;vol=sup*(a/1000);desc=`Ø${spEff}×${a}mm`;
+  }
+  peso=vol*(sh.dens||7850);
+  const disponibile=sh._resDisp;
+  let alertHtml='';
+  if(peso>disponibile)alertHtml=`<div style="background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.4);border-radius:8px;padding:12px;margin-top:8px;color:var(--red)"><strong>⚠️ Materiale insufficiente!</strong> Pezzo: ${fmt(peso,3)} kg | Disponibile: ${fmt(disponibile,3)} kg</div>`;
+  let sfSuggestHtml='';
+  if(!sh._isSf&&peso>0&&peso<=disponibile){
+    const sfComp=sfRiutil.filter(s=>!s.usato&&s.tipo===sh.tipo&&s.peso>=peso&&s.mat===sh.mat);
+    if(sfComp.length>0){const sf=sfComp.sort((a,z)=>a.peso-z.peso)[0];sfSuggestHtml=`<div style="background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.35);border-radius:8px;padding:12px;margin-top:8px;color:var(--blue)"><strong>💡 Usa uno sfrido esistente!</strong><br><span style="font-size:11px">${esc(sf.mat)} — ${esc(sf.desc||'')} (${fmt(sf.peso,3)} kg) — considera di usarlo per risparmiare materiale.</span></div>`;}
+  }
+  $('#lvPI').innerHTML=`<div class="sinfo"><div class="sr"><span>Lamiera tagliata:</span><span>${desc}</span></div><div class="sr"><span>Sup:</span><span>${fmt(sup,4)} m²</span></div><div class="sr"><span>Vol:</span><span>${fmt(vol,6)} m³</span></div><div class="sr"><span><strong>Peso lamiera tagliata:</strong></span><span><strong style="color:var(--accent)">${fmt(peso,3)} kg</strong></span></div></div>${alertHtml}${sfSuggestHtml}`;
+  const sv=$('#lvS');sv.style.display='block';
+  // v4.3.9: checkbox "🗑 Cestina tutto sfrido" compare SOLO quando lo sfrido NON è riutilizzabile.
+  // Se attiva, nasconde i campi forma/dimensioni e lo sfrido = residuo rimanente della sorgente.
+  sv.innerHTML=`<div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin:12px 0 8px">Sfrido generato</div>
+    <div class="ck on" id="ck_sf"><div class="ck-b">${CHK_SVG}</div><div style="font-size:12px">C'è sfrido</div></div>
+    <div id="sfF">
+      <div class="ck on" id="ck_su"><div class="ck-b">${CHK_SVG}</div><div style="font-size:12px">Sfrido riutilizzabile (salvato in Sfridi)</div></div>
+      <div id="ck_trash_wrap" style="display:none">
+        <div class="ck" id="ck_trash" style="border-color:rgba(239,68,68,.3)"><div class="ck-b">${CHK_SVG}</div><div style="font-size:12px;color:var(--red)">🗑 Cestina tutto lo sfrido rimanente (marca la sorgente come ESAURITA)</div></div>
+      </div>
+      <div id="sfDetails">
+        <div class="fg">
+          <div class="fi s2"><label class="fl">Forma sfrido</label>
+            <select class="fx" id="sf_t" onchange="sfFormaLav()">
+              <option value="rett">Lastra rettangolare (L × W)</option>
+              <option value="disco">Disco pieno (Ø est.)</option>
+              <option value="anello">Anello (Ø est. / Ø int.)</option>
+              <option value="peso">⚖️ Peso diretto (kg) — senza dimensioni</option>
+            </select>
+          </div>
+        </div>
+        <div id="sfDimsLav" class="fg"></div>
+        <div id="sfI"></div>
+      </div>
+    </div>`;
+  document.getElementById('ck_sf').addEventListener('click',function(){
+    this.classList.toggle('on');
+    document.getElementById('sfF').style.display=this.classList.contains('on')?'block':'none';
+    lvP();
+  });
+  // Checkbox "Riutilizzabile": quando NON spuntata, mostra il riquadro "Cestina tutto"
+  document.getElementById('ck_su').addEventListener('click',function(){
+    this.classList.toggle('on');
+    const isRiut = this.classList.contains('on');
+    const trashWrap = document.getElementById('ck_trash_wrap');
+    if(trashWrap) trashWrap.style.display = isRiut ? 'none' : 'block';
+    // Se torno a "riutilizzabile", disattiva automaticamente "cestina tutto"
+    if(isRiut){
+      const trash = document.getElementById('ck_trash');
+      if(trash && trash.classList.contains('on')){
+        trash.classList.remove('on');
+        const det=document.getElementById('sfDetails');
+        if(det)det.style.display='block';
+      }
+    }
+    lvP();
+  });
+  // Checkbox "Cestina tutto": nasconde i dettagli dimensioni/forma
+  // e imposta lo sfrido = residuo della sorgente (tutto quello che rimane è perso).
+  document.getElementById('ck_trash').addEventListener('click',function(){
+    this.classList.toggle('on');
+    const isOn=this.classList.contains('on');
+    const det=document.getElementById('sfDetails');
+    if(det)det.style.display=isOn?'none':'block';
+    lvP();
+  });
+  // Inizializza: "Cestina tutto" visibile solo se NON riutilizzabile
+  const suInit = document.getElementById('ck_su');
+  const trashWrapInit = document.getElementById('ck_trash_wrap');
+  if(suInit && trashWrapInit){
+    trashWrapInit.style.display = suInit.classList.contains('on') ? 'none' : 'block';
+  }
+  sfFormaLav();
+  lvP();
+}
+
+window.sfFormaLav=function(){
+  const forma=document.getElementById('sf_t')?.value||'rett';
+  const dims=document.getElementById('sfDimsLav');if(!dims)return;
+  if(forma==='rett'){
+    dims.innerHTML=`<div class="fi"><label class="fl">Lato 1 (mm)</label><input class="fx" id="sf_a" type="number" placeholder="es. 200" oninput="lvP()"></div><div class="fi"><label class="fl">Lato 2 (mm)</label><input class="fx" id="sf_b" type="number" placeholder="es. 100" oninput="lvP()"></div>`;
+  }else if(forma==='disco'){
+    dims.innerHTML=`<div class="fi"><label class="fl">Ø Esterno (mm)</label><input class="fx" id="sf_a" type="number" placeholder="es. 200" oninput="lvP()"></div>`;
+  }else if(forma==='anello'){
+    dims.innerHTML=`<div class="fi"><label class="fl">Ø Esterno (mm)</label><input class="fx" id="sf_a" type="number" placeholder="es. 200" oninput="lvP()"></div><div class="fi"><label class="fl">Ø Interno (mm)</label><input class="fx" id="sf_b" type="number" placeholder="es. 100" oninput="lvP()"></div>`;
+  }else if(forma==='peso'){
+    dims.innerHTML=`<div class="fi s2"><label class="fl">Peso sfrido (kg) <span style="color:var(--text3);font-weight:400">— inserimento diretto</span></label><input class="fx" id="sf_pkg" type="number" step="0.001" placeholder="es. 1.250" oninput="lvP()"></div>`;
+  }
+  lvP();
+};
+
+window.lvP=function(){
+  const d=gLD();const pr=$('#lvPr');const bt=$('#lvB');
+  if(!d){if(pr)pr.innerHTML='';if(bt)bt.disabled=true;return;}
+  const overweight=d.pp>d.sh._resDisp;
+  bt.disabled=overweight;
+  const costoCliente = d.pp * d.sh.ckg;
+  const margineSfridoMsg = (d.hsf && d.sfu && d.psf>0) ? `<div class="rr"><span style="color:var(--blue)">Recupero in Sfridi ♻️</span><span style="color:var(--blue);font-weight:600">+${fmt(d.psf,3)} kg</span></div>` : '';
+  // Label sfrido nel riepilogo: diversa per "cestina tutto" vs normale
+  const sfLabel = d.trashAll
+    ? `<div class="rr" style="color:var(--red)"><span>🗑 Sfrido cestinato (tutto il residuo)</span><span style="font-weight:600">${fmt(d.psf,3)} kg — <span class="sf-lost-badge">Perso ❌</span></span></div>`
+    : (d.hsf?`<div class="rr"><span>Peso sfrido (${d.sfForma})</span><span>${fmt(d.psf,3)} kg — <span class="${d.sfu?'sf-used-badge':'sf-lost-badge'}">${d.sfu?'Riutilizzabile ✅':'Perso ❌'}</span></span></div>`:'');
+  const residuoFinale = d.sh._resDisp - d.psot;
+  pr.innerHTML=`<div class="rp" style="margin-bottom:0">
+    <div style="font-size:10px;font-family:'Space Mono',monospace;text-transform:uppercase;letter-spacing:1.5px;color:var(--text3);margin-bottom:10px">Riepilogo</div>
+    <div class="rr"><span>Peso lamiera tagliata</span><span style="color:var(--accent)">${fmt(d.pp,3)} kg</span></div>
+    ${sfLabel}
+    ${margineSfridoMsg}
+    <div class="rr"><span><strong>Sottratto da ${d.sh._isSf?'sfrido':'magazzino'}</strong></span><span><strong>${fmt(d.psot,3)} kg</strong></span></div>
+    <div class="rr"><span>Residuo dopo</span><span style="color:${residuoFinale<0?'var(--red)':d.trashAll?'var(--red)':'inherit'};font-weight:${d.trashAll?'700':'400'}">${fmt(residuoFinale,3)} kg${d.trashAll?' — ESAURITO 🗑':''}</span></div>
+    <div class="rr" style="background:var(--accent-bg);border-radius:6px;padding:8px"><span><strong>Costo cliente</strong> (lamiera × €/kg)</span><span style="color:var(--accent);font-weight:700">${fmtE(costoCliente)}</span></div>
+  </div>
+  ${overweight?`<div style="background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.4);border-radius:8px;padding:10px;margin-top:8px;color:var(--red);font-size:12px"><strong>⚠️ Materiale insufficiente — impossibile registrare.</strong></div>`:''}`;
+}
+
+function gLD(){
+  const sh=lvGetSel();if(!sh)return null;
+  const cl=$('#lv_cl')?.value?.trim(),co=$('#lv_co')?.value?.trim();
+  const a=+(($('#lv_a')?.value)||0);if(!a||!cl||!co)return null;
+  const b=+(($('#lv_b')?.value)||0);
+  const spInput=+(($('#lv_sp')?.value)||0);
+  const spEff=sh._isSf?(spInput||sh.spessore||1):(sh.tipo==='lamiera'?sh.dim.t:sh.dim.de);
+  const formaLav = sh.tipo==='lamiera' ? (document.getElementById('lv_forma')?.value || 'rett') : 'tondo';
+  let sup,vol,pp,desc;
+  if(sh.tipo==='lamiera'){
+    const sp=spEff/1000;
+    if(formaLav==='disco'){
+      // Taglio circolare: a = Ø esterno
+      const r=(a/1000)/2;sup=Math.PI*r*r;vol=sup*sp;desc=`Ø${a}×${spEff}mm`;
+    } else {
+      sup=b>0?(a/1000)*(b/1000):(a/1000)*(a/1000);vol=sup*sp;
+      desc=b>0?`${a}×${b}×${spEff}mm`:`${a}×${a}×${spEff}mm`;
+    }
+    pp=+(vol*(sh.dens||7850)).toFixed(3);
+  }else{
+    const r=(spEff/1000)/2;sup=Math.PI*r*r;vol=sup*(a/1000);desc=`Ø${spEff}×${a}mm`;
+    pp=+(vol*(sh.dens||7850)).toFixed(3);
+  }
+  const ckSf=document.getElementById('ck_sf');
+  const sfFEl=document.getElementById('sfF');
+  const hsf=ckSf?.classList?.contains('on')&&sfFEl?.style?.display!=='none';
+  // Flag "cestina tutto sfrido": lo sfrido = residuo della sorgente, perso
+  const trashAll = hsf && document.getElementById('ck_trash')?.classList?.contains('on');
+  let psf=0,sfInfo=null,sfForma='';
+  if(hsf){
+    if(trashAll){
+      // Tutto ciò che rimane nella sorgente dopo il taglio del pezzo viene buttato
+      // psf = residuo_disponibile - pp (tutto ciò che non è il pezzo prodotto)
+      const restante = Math.max(0, sh._resDisp - pp);
+      psf = +restante.toFixed(3);
+      sfForma = 'cestinato';
+      sfInfo = {tipo:'cestinato',d1:0,d2:0,sup:0,vol:0,peso:psf};
+      const si=document.getElementById('sfI');
+      if(si) si.innerHTML=`<div class="sinfo" style="border-color:rgba(239,68,68,.3)"><div class="sr"><span style="color:var(--red)"><strong>🗑 Sfrido cestinato (tutto il residuo):</strong></span><span style="color:var(--red)"><strong>${fmt(psf,3)} kg</strong></span></div><div style="font-size:10px;color:var(--text3);margin-top:4px">La sorgente verrà marcata come ESAURITA al salvataggio</div></div>`;
+    } else {
+      const st=document.getElementById('sf_t')?.value||'rett';
+      sfForma=st;
+      if(st==='peso'){
+        // Peso diretto: nessuna dimensione, solo kg
+        const pkg=+(document.getElementById('sf_pkg')?.value||0);
+        if(pkg>0){
+          psf=+pkg.toFixed(3);
+          sfInfo={tipo:'peso',d1:0,d2:0,sup:0,vol:0,peso:psf};
+          const si=document.getElementById('sfI');
+          if(si)si.innerHTML=`<div class="sinfo"><div class="sr"><span><strong>Peso sfrido (diretto):</strong></span><span style="color:var(--blue)"><strong>${fmt(psf,3)} kg</strong></span></div></div>`;
+        }
+      } else {
+        const sa=+(document.getElementById('sf_a')?.value||0);
+        const sb=+(document.getElementById('sf_b')?.value||0);
+        const thick=spEff/1000;
+        if(sa>0){
+          let ssup=0,svol=0;
+          if(st==='rett'){const l1=sa/1000,l2=(sb||sa)/1000;ssup=l1*l2;svol=ssup*thick;}
+          else if(st==='disco'){const r=(sa/1000)/2;ssup=Math.PI*r*r;svol=ssup*thick;}
+          else if(st==='anello'){const re=(sa/1000)/2,ri=(sb/1000)/2;ssup=Math.PI*(re*re-ri*ri);svol=ssup*thick;}
+          psf=+(svol*(sh.dens||7850)).toFixed(3);
+          sfInfo={tipo:st,d1:sa,d2:sb,sup:ssup,vol:svol,peso:psf};
+          const si=document.getElementById('sfI');
+          if(si)si.innerHTML=`<div class="sinfo"><div class="sr"><span>Sup sfrido:</span><span>${fmt(ssup,4)} m²</span></div><div class="sr"><span>Vol:</span><span>${fmt(svol,6)} m³</span></div><div class="sr"><span><strong>Peso sfrido:</strong></span><span style="color:var(--blue)"><strong>${fmt(psf,3)} kg</strong></span></div></div>`;
+        }
+      }
+    }
+  }
+  // sfu: riutilizzabile solo se NON è "cestina tutto" e se la checkbox è attiva
+  const sfu = !trashAll && hsf && document.getElementById('ck_su')?.classList?.contains('on');
+  // LOGICA UNIFORME v4.3.9.1:
+  // La quantità effettivamente "prelevata" dalla sorgente (magazzino o sfrido) è sempre pp
+  // — perché pp è il peso materiale che esce dalla lamiera/sfrido origine per fare la
+  // lavorazione (include al suo interno il peso del pezzo prodotto + quello che diventa sfrido).
+  //
+  // Eccezione quando la SORGENTE è un materiale di MAGAZZINO (lamiera/tondo):
+  //   - se lo sfrido generato è RIUTILIZZABILE (torna in Sfridi ♻️): sottrazione netta = pp - psf
+  //     (perché psf entra come entità separata in Sfridi, quindi materiale "recuperato")
+  //   - se lo sfrido è PERSO o assente: sottrazione = pp (tutto il taglio esce dal magazzino)
+  //
+  // Quando la SORGENTE è uno SFRIDO riutilizzabile esistente:
+  //   - psot = pp sempre (altrimenti creeremmo materiale dal nulla duplicando l'entrata in Sfridi).
+  //     Lo sfrido generato sarà comunque registrato a parte (in Sfridi ♻️ se riutilizzabile).
+  let psot;
+  if(trashAll){
+    // Cestina tutto: sottrai l'INTERO residuo disponibile, la sorgente sarà esaurita
+    psot = sh._resDisp;
+  } else if(sh._isSf){
+    psot = pp;
+  } else {
+    psot = (hsf && sfu && psf>0) ? Math.max(0, pp - psf) : pp;
+  }
+  return{sh,cl,co,a,b,sup,vol,pp,desc,hsf,psf,sfInfo,sfu,psot,spEff,sfForma,trashAll};
+}
+
+window.subLav=function(){
+  const d=gLD();if(!d)return;
+  if(d.pp>d.sh._resDisp){alert('⚠️ Materiale insufficiente.');return;}
+  const l={
+    id:uid(),date:new Date().toLocaleString('it-IT'),
+    cli:d.cl,com:d.co,
+    sid:d.sh._isSf?null:d.sh.id,
+    sfSid:d.sh._isSf?d.sh._sfId:null,
+    mat:d.sh.mat,col:d.sh.col,part:d.sh.part||'',tipo:d.sh.tipo,
+    pdesc:d.desc,sup:d.sup,vol:d.vol,pp:d.pp,
+    sf:d.sfInfo,sfu:d.sfu,psf:d.psf,psot:d.psot,
+    ckg:d.sh.ckg,ctot:+(d.pp*d.sh.ckg).toFixed(2),
+    dens:d.sh.dens,spessore:d.spEff||0,fromSfrido:d.sh._isSf,
+    _trashAll:!!d.trashAll  // flag: se true, la sorgente è stata esaurita via "cestina tutto"
+    // NOTA: NO flag manuale, NO _sfPersoManuale — questa è una lavorazione reale
+  };
+  lav.push(l);
+  if(d.sh._isSf&&d.sh._sfId){
+    const sfIdx=sfRiutil.findIndex(x=>x.id===d.sh._sfId);
+    if(sfIdx>=0){sfRiutil[sfIdx].peso=Math.max(0,sfRiutil[sfIdx].peso-d.psot);if(sfRiutil[sfIdx].peso<=0.001)sfRiutil[sfIdx].usato=true;}
+  }
+  if(d.sfu&&d.sfInfo&&d.psf>0){
+    sfRiutil.push({
+      id:uid(),date:new Date().toLocaleDateString('it-IT'),
+      mat:d.sh.mat,col:d.sh.col,tipo:d.sh.tipo,
+      forma:d.sfForma,
+      desc:`da ${d.desc} — ${d.sfForma==='rett'?`${d.sfInfo.d1}×${d.sfInfo.d2}mm`:d.sfForma==='disco'?`Ø${d.sfInfo.d1}mm`:d.sfForma==='anello'?`Ø${d.sfInfo.d1}/Ø${d.sfInfo.d2}mm`:'peso diretto'}`,
+      peso:d.psf,ckg:d.sh.ckg,spessore:d.spEff||0,dens:d.sh.dens||7850,
+      lavId:l.id,note:'',usato:false
+    });
+  }
+  recalc();
+  // v4.3.9: se è stato attivato "Cestina tutto", esaurisce automaticamente la sorgente
+  // senza chiedere conferma (l'utente ha già espresso la volontà con la checkbox).
+  // Altrimenti, nessun prompt — l'utente può esaurire manualmente dal magazzino.
+  if(d.trashAll){
+    if(!d.sh._isSf){
+      const m=mag.find(x=>x.id===d.sh.id);
+      if(m&&!m.esa){
+        m.esa=true;
+        m.res=0;
+        if(!m.dataEsaurimento)m.dataEsaurimento=new Date().toLocaleDateString('it-IT');
+      }
+    } else {
+      const sfSrc=sfRiutil.find(x=>x.id===d.sh._sfId);
+      if(sfSrc){sfSrc.usato=true;sfSrc.peso=0;}
+    }
+  }
+  save();S.modal={type:'rep',data:l};render();
+}
+
+// ═══ COMMESSE ═══
+// FIX: mostra SOLO lavorazioni reali (no sfridi manuali)
+function rCom(){
+  const lavReali=lav.filter(l=>!l._sfPersoManuale&&!l.manuale);
+  const r=[...lavReali].reverse();
+  return`<div class="card"><div class="chd"><div class="ct">Registro Lavorazioni</div>
+    ${lavReali.length?`<button class="btn btn-g btn-s" onclick="expCSV()">📥 CSV</button>`:''}</div>
+    ${r.length===0?'<div class="empty">Nessuna lavorazione registrata</div>':`<div class="com-cards"><table>
+    <thead><tr><th>Data</th><th>Cliente</th><th>Commessa</th><th>Materiale</th><th>Colata</th><th>Partita</th><th>Pezzo</th><th>Peso kg</th><th>Sfrido kg</th><th>Tipo sfrido</th><th>Sottratto</th><th>€/kg</th><th>Costo pezzo</th><th>Costo cliente</th><th>Margine sfrido</th><th></th></tr></thead>
+    <tbody>${r.map(l=>{
+      const ri=lav.findIndex(x=>x.id===l.id);
+      // LOGICA v4.3.9: il cliente paga sempre la lamiera intera tagliata (pp × €/kg)
+      const costoCliente=+((l.pp||0)*(l.ckg||0)).toFixed(2);
+      const margineSfrido=l.sfu&&l.psf>0?+((l.psf||0)*(l.ckg||0)).toFixed(2):0;
+      return`<tr>
+      <td data-l="Data" style="font-size:10px;color:var(--text3)">${esc(l.date)}</td>
+      <td data-l="Cliente"><input class="ie ie-w" value="${esc(l.cli)}" onchange="lav[${ri}].cli=this.value;save();renderPage()"></td>
+      <td data-l="Commessa"><input class="ie ie-w" value="${esc(l.com)}" onchange="lav[${ri}].com=this.value;save();renderPage()"></td>
+      <td data-l="Materiale"><input class="ie ie-w" value="${esc(l.mat)}" onchange="lav[${ri}].mat=this.value;save();renderPage()"></td>
+      <td data-l="Colata"><input class="ie ie-w" value="${esc(l.col||'')}" onchange="lav[${ri}].col=this.value;save();renderPage()"></td>
+      <td data-l="Partita"><input class="ie ie-w" value="${esc(l.part||'')}" onchange="lav[${ri}].part=this.value;save();renderPage()" placeholder="—"></td>
+      <td data-l="Pezzo" style="font-size:10px">${esc(l.pdesc)}</td>
+      <td data-l="Peso kg"><input class="ie" type="number" value="${fmt(l.pp,3)}" onchange="lav[${ri}].pp=+this.value;lav[${ri}].ctot=+(lav[${ri}].pp*(lav[${ri}].ckg||0)).toFixed(2);lav[${ri}].psot=lav[${ri}].sfu&&lav[${ri}].psf>0?Math.max(0,lav[${ri}].pp-(lav[${ri}].psf||0)):lav[${ri}].pp;recalc();save();renderPage()" style="color:var(--accent)"></td>
+      <td data-l="Sfrido kg"><input class="ie" type="number" value="${fmt(l.psf||0,3)}" onchange="lav[${ri}].psf=+this.value;lav[${ri}].psot=lav[${ri}].sfu&&lav[${ri}].psf>0?Math.max(0,lav[${ri}].pp-lav[${ri}].psf):lav[${ri}].pp;recalc();save();renderPage()"></td>
+      <td data-l="Tipo sfrido"><select class="ie" onchange="lav[${ri}].sfu=this.value==='riutil';lav[${ri}].psot=lav[${ri}].sfu&&lav[${ri}].psf>0?Math.max(0,lav[${ri}].pp-lav[${ri}].psf):lav[${ri}].pp;recalc();save();renderPage()">
+        <option value="nessuno" ${!l.sf?'selected':''}>—</option>
+        <option value="riutil" ${l.sf&&l.sfu?'selected':''}>Riutil. ✅</option>
+        <option value="perso" ${l.sf&&!l.sfu?'selected':''}>Perso ❌</option>
+      </select></td>
+      <td data-l="Sottratto" style="font-weight:700">${fmt(l.psot,3)}</td>
+      <td data-l="€/kg"><input class="ie" type="number" value="${fmt(l.ckg,2)}" onchange="lav[${ri}].ckg=+this.value;lav[${ri}].ctot=+(lav[${ri}].pp*(+this.value)).toFixed(2);save();renderPage()"></td>
+      <td data-l="Costo pezzo" style="font-weight:600;color:var(--accent)">${fmtE(l.ctot)}</td>
+      <td data-l="Costo cliente" style="font-weight:600;color:var(--yellow)" title="Peso lamiera tagliata × €/kg">${fmtE(costoCliente)}</td>
+      <td data-l="Margine sfrido" style="font-weight:600;color:${margineSfrido>0?'var(--green)':'var(--text3)'}">${margineSfrido>0?fmtE(margineSfrido):'—'}</td>
+      <td style="display:flex;gap:4px">
+        <button class="btn btn-bl btn-s" onclick="pBolla('${l.id}')">PDF</button>
+        <button class="btn btn-s btn-d" onclick="delLav('${l.id}')">🗑</button>
+      </td>
+    </tr>`}).join('')}</tbody></table></div>`}
+  </div>`;
+}
+window.delLav=function(id){
+  askPin('PIN per eliminare lavorazione',()=>{
+    const i=lav.findIndex(x=>x.id===id);
+    if(i<0)return;
+    const l=lav[i];
+    // 1. Se la sorgente era uno SFRIDO riutilizzabile esistente, ripristina il peso consumato
+    //    e riattivalo se era stato marcato "usato" (vale anche per trashAll su sfrido).
+    if(l.sfSid){
+      const sfSrc=sfRiutil.find(x=>x.id===l.sfSid);
+      if(sfSrc){
+        sfSrc.peso=+(sfSrc.peso+(l.psot||0)).toFixed(3);
+        sfSrc.usato=false;
+      }
+    }
+    // 2. Rimuovi lo sfrido riutilizzabile GENERATO da questa lavorazione (se l'aveva creato).
+    //    Se già consumato da altre lavorazioni, chiedi conferma.
+    const sfGenIdx=sfRiutil.findIndex(x=>x.lavId===l.id);
+    if(sfGenIdx>=0){
+      const sfGen=sfRiutil[sfGenIdx];
+      const sfConsumato=lav.some(x=>x.sfSid===sfGen.id && x.id!==l.id);
+      if(sfConsumato){
+        if(!confirm(
+          `⚠️ Lo sfrido riutilizzabile generato da questa lavorazione è stato usato in altre lavorazioni.\n\n`+
+          `Eliminare comunque? Lo sfrido generato resterà in "Sfridi" ma con peso aggiornato.\n`+
+          `Le lavorazioni che usano quello sfrido NON verranno eliminate (dovresti eliminarle prima).`
+        )){return;}
+      } else {
+        sfRiutil.splice(sfGenIdx,1);
+      }
+    }
+    // 3. Se la sorgente era il MAGAZZINO ed era stata marcata "esaurita" da questa lavorazione
+    //    (trashAll), riapri il materiale. Il ricalcolo successivo gestirà il residuo corretto.
+    if(l.sid && l._trashAll){
+      const m=mag.find(x=>x.id===l.sid);
+      if(m){
+        m.esa=false;
+        m.dataEsaurimento='';
+      }
+    }
+    // 4. Rimuovi la lavorazione
+    lav.splice(i,1);
+    // 5. Ricalcola TUTTO il magazzino (residui dalle lavorazioni rimaste) e salva
+    recalc();
+    save();
+    render();
+  });
+};
+
+// ═══ STORICO ═══
+// FIX: mostra sempre dati giornalieri/mensili/annuali; storico non cancellabile senza PIN; report annuale completo
+let storicoFiltro='mese';
+function rStorico(){
+  const now=new Date();
+  const lavReali=lav.filter(l=>!l._sfPersoManuale&&!l.manuale);
+  // Sfridi persi manuali separati — li aggiungiamo ai totali ma non li contiamo come lavorazioni
+  const sfPersiManuali=lav.filter(l=>l._sfPersoManuale);
+  let label='',filtrati=[],sfPersiManualiFiltr=[];
+  const matchDate=(d,fn)=>{if(!d)return false;const p=d.split('/');return fn(p);};
+  if(storicoFiltro==='giorno'){
+    const oggi=now.toLocaleDateString('it-IT');
+    filtrati=lavReali.filter(l=>l.date&&(l.date.startsWith(oggi)||l.date.includes(oggi)));
+    sfPersiManualiFiltr=sfPersiManuali.filter(l=>l.date&&(l.date.startsWith(oggi)||l.date.includes(oggi)));
+    label='Oggi ('+oggi+')';
+  }else if(storicoFiltro==='mese'){
+    const mm=String(now.getMonth()+1).padStart(2,'0'),yy=now.getFullYear();
+    const fMese=p=>p.length>=3&&p[1]===mm&&p[2].startsWith(String(yy));
+    filtrati=lavReali.filter(l=>matchDate(l.date,fMese));
+    sfPersiManualiFiltr=sfPersiManuali.filter(l=>matchDate(l.date,fMese));
+    label='Questo mese ('+mm+'/'+yy+')';
+  }else if(storicoFiltro==='anno'){
+    const yy=String(now.getFullYear());
+    const fAnno=p=>p.length>=3&&p[2].startsWith(yy);
+    filtrati=lavReali.filter(l=>matchDate(l.date,fAnno));
+    sfPersiManualiFiltr=sfPersiManuali.filter(l=>matchDate(l.date,fAnno));
+    label='Quest\'anno ('+yy+')';
+  }
+
+  const totPezzi=filtrati.length;
+  const totPesoProd=filtrati.reduce((a,l)=>a+l.pp,0);
+  const totSfRiutil=filtrati.filter(l=>l.sfu&&l.psf>0).reduce((a,l)=>a+l.psf,0);
+  // FIX: sfrido perso somma lavorazioni + manuali
+  const totSfPersoLav=filtrati.filter(l=>l.sf&&!l.sfu&&l.psf>0).reduce((a,l)=>a+l.psf,0);
+  const totSfPersoManuale=sfPersiManualiFiltr.reduce((a,l)=>a+l.psf,0);
+  const totSfPerso=totSfPersoLav+totSfPersoManuale;
+  const totCostoPezzi=filtrati.reduce((a,l)=>a+l.ctot,0);
+  const totInput=totPesoProd+totSfPerso;
+  const effUso=totInput>0?((totPesoProd/totInput)*100):100;
+  // v4.3.9: rimossa card "Materiale movimentato" — creava confusione rispetto a Peso prodotto
+
+  // v4.3.9: Residuo totale magazzino per periodo
+  //  - Oggi:    residuo attuale = somma live di mag[*].res (i materiali attivi)
+  //  - Mese:    se è mese corrente → residuo live; se è mese passato → residuo dallo
+  //             snapshot mensile (chiuso a fine mese = foto al 23:59:59 ultimo giorno)
+  //  - Anno:    se è anno corrente → residuo live; se è anno passato → snapshot Dicembre
+  //             di quell'anno (foto finale dell'anno)
+  //
+  // Il residuo è la somma dei kg rimanenti in magazzino (solo materiali non esauriti +
+  // esauriti con res=0 che non contano). Gli sfridi riutilizzabili disponibili NON sono
+  // inclusi perché sono materiali già processati una volta (vista come "ri-lavorabili").
+  const residuoLive = mag.filter(m=>!m.esa).reduce((a,m)=>a+(m.res||0),0);
+  let residuoPeriodo = residuoLive;
+  let residuoLabel = '(stato attuale)';
+  let residuoIsSnapshot = false;
+  const annoCorrente = now.getFullYear();
+  const meseCorrenteKey = annoCorrente+'-'+String(now.getMonth()+1).padStart(2,'0');
+  if(storicoFiltro==='mese'){
+    // È il mese corrente o passato?
+    residuoLabel = '(aggiornato in tempo reale)';
+    // (siamo sempre nel mese corrente con il filtro 'mese', i mesi passati si vedono
+    //  negli snapshot in fondo pagina — non manipoliamo qui)
+  } else if(storicoFiltro==='anno'){
+    // Anno corrente: residuo live (è quello che si sta formando)
+    residuoLabel = '(aggiornato in tempo reale)';
+  }
+
+  // Riepilogo per materiale (aggregato per mat+col)
+  const perMat={};
+  filtrati.forEach(l=>{const k=(l.mat||'?')+'|'+(l.col||'');if(!perMat[k])perMat[k]={mat:l.mat,col:l.col,n:0,pp:0,sf:0,sfR:0,costo:0};const m=perMat[k];m.n++;m.pp+=l.pp;if(l.sf&&!l.sfu)m.sf+=l.psf||0;if(l.sfu)m.sfR+=l.psf||0;m.costo+=l.ctot;});
+
+  // Report annuale: tutte le lavorazioni mese per mese
+  const mNomi=['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'];
+  const anno=now.getFullYear();
+  const lavAnno=lavReali.filter(l=>{if(!l.date)return false;const p=l.date.split('/');return p.length>=3&&p[2].startsWith(String(anno));});
+  const mesiConLav=[...new Set(lavAnno.map(l=>l.date.split('/')[1]))].sort();
+
+  const snapsArr=[...storici].reverse();
+
+  return`<div class="card">
+    <div class="chd"><div class="ct">Storico & Analisi</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn btn-g btn-s" onclick="generaStorico()">📸 Aggiorna snapshot</button>
+        <button class="btn btn-bl btn-s" onclick="pdfAnnuale()">📄 Report annuale PDF</button>
+      </div>
+    </div>
+
+    <!-- Filtro periodo a pillole -->
+    <div class="stab">
+      <button class="${storicoFiltro==='giorno'?'active':''}" onclick="storicoFiltro='giorno';render()">📅 Oggi</button>
+      <button class="${storicoFiltro==='mese'?'active':''}" onclick="storicoFiltro='mese';render()">🗓 Questo mese</button>
+      <button class="${storicoFiltro==='anno'?'active':''}" onclick="storicoFiltro='anno';render()">📆 Quest'anno</button>
+    </div>
+
+    <!-- KPI periodo -->
+    <div class="dash-kpi" style="margin-bottom:16px">
+      <div class="sinfo" style="margin-bottom:0;text-align:center"><div class="fl">Lavorazioni</div><div style="font-size:22px;font-weight:700;color:var(--text);margin-top:4px">${totPezzi}</div><div style="font-size:10px;color:var(--text3)">${label}</div></div>
+      <div class="sinfo" style="margin-bottom:0;text-align:center;border-color:rgba(34,197,94,.35);background:rgba(34,197,94,.06)"><div class="fl">Residuo magazzino</div><div style="font-size:22px;font-weight:700;color:var(--green);margin-top:4px">${fmt(residuoPeriodo,1)} kg</div><div style="font-size:10px;color:var(--text3)">${residuoLabel}</div></div>
+      <div class="sinfo" style="margin-bottom:0;text-align:center"><div class="fl">Peso prodotto</div><div style="font-size:18px;font-weight:700;color:var(--accent);margin-top:4px">${fmt(totPesoProd,1)} kg</div></div>
+      <div class="sinfo" style="margin-bottom:0;text-align:center;border-color:rgba(239,68,68,.25)"><div class="fl">Sfrido perso</div><div style="font-size:18px;font-weight:700;color:var(--red);margin-top:4px">${fmt(totSfPerso,1)} kg</div></div>
+      <div class="sinfo" style="margin-bottom:0;text-align:center;border-color:rgba(59,130,246,.25)"><div class="fl">Sfrido ♻️</div><div style="font-size:18px;font-weight:700;color:var(--blue);margin-top:4px">${fmt(totSfRiutil,1)} kg</div></div>
+      <div class="sinfo" style="margin-bottom:0;text-align:center"><div class="fl">Costo pezzi</div><div style="font-size:16px;font-weight:700;color:var(--accent);margin-top:4px">${fmtE(totCostoPezzi)}</div></div>
+      <div class="sinfo" style="margin-bottom:0;text-align:center">
+        <div class="fl">Efficienza mat.</div>
+        <div style="font-size:18px;font-weight:700;color:${effUso>=90?'var(--green)':effUso>=70?'var(--yellow)':'var(--red)'};margin-top:4px">${fmt(effUso,1)}%</div>
+        <div style="background:var(--bg4);border-radius:4px;height:5px;overflow:hidden;margin-top:4px"><div style="height:100%;width:${Math.min(effUso,100)}%;background:${effUso>=90?'var(--green)':effUso>=70?'var(--yellow)':'var(--red)'};border-radius:4px"></div></div>
+      </div>
+    </div>
+
+    <!-- Per materiale -->
+    ${Object.keys(perMat).length>0?`
+    <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Riepilogo per materiale — ${label}</div>
+    <div class="tw"><table class="mob-cards"><thead><tr><th>Materiale</th><th>Colata</th><th>Lav.</th><th>Peso prod. kg</th><th>Sfrido ♻️ kg</th><th>Sfrido perso kg</th><th>Costo pezzi</th></tr></thead>
+    <tbody>${Object.values(perMat).map(m=>`<tr>
+      <td data-l="Materiale" style="font-weight:600;color:var(--text)">${esc(m.mat)}</td>
+      <td data-l="Colata">${esc(m.col)}</td>
+      <td data-l="Lav." style="text-align:center">${m.n}</td>
+      <td data-l="Peso prod." style="color:var(--accent)">${fmt(m.pp,2)}</td>
+      <td data-l="Sfrido ♻️" style="color:var(--blue)">${m.sfR>0?fmt(m.sfR,2):'—'}</td>
+      <td data-l="Sfrido perso" style="color:var(--red)">${m.sf>0?fmt(m.sf,2):'—'}</td>
+      <td data-l="Costo" style="color:var(--accent)">${fmtE(m.costo)}</td>
+    </tr>`).join('')}</tbody></table></div>`:''}
+
+    <!-- Lavorazioni del periodo -->
+    ${filtrati.length===0?`<div class="empty">Nessuna lavorazione nel periodo.</div>`:`
+    <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin:12px 0 8px">Lavorazioni — ${label}</div>
+    <div class="tw"><table class="mob-cards">
+      <thead><tr><th>Data</th><th>Cliente</th><th>Commessa</th><th>Materiale</th><th>Pezzo</th><th>Peso kg</th><th>Sfrido ♻️</th><th>Sfrido 🗑</th><th>Costo pezzo</th></tr></thead>
+      <tbody>${[...filtrati].reverse().map(l=>`<tr>
+        <td data-l="Data" style="font-size:10px;color:var(--text3)">${esc(l.date)}</td>
+        <td data-l="Cliente">${esc(l.cli)}</td><td data-l="Commessa">${esc(l.com)}</td><td data-l="Materiale">${esc(l.mat)}</td><td data-l="Pezzo" style="font-size:10px">${esc(l.pdesc)}</td>
+        <td data-l="Peso kg" style="color:var(--accent);font-weight:600">${fmt(l.pp,2)}</td>
+        <td data-l="Sfrido ♻️" style="color:var(--blue)">${l.sfu&&l.psf>0?fmt(l.psf,2)+' kg':'—'}</td>
+        <td data-l="Sfrido 🗑" style="color:var(--red)">${l.sf&&!l.sfu&&l.psf>0?fmt(l.psf,2)+' kg':'—'}</td>
+        <td data-l="Costo" style="color:var(--accent)">${fmtE(l.ctot)}</td>
+      </tr>`).join('')}</tbody></table></div>`}
+  </div>
+
+  <!-- Report annuale mese per mese -->
+  ${lavAnno.length>0?`<div class="card"><div class="chd"><div class="ct">Report Annuale ${anno}</div>
+    <button class="btn btn-bl btn-s" onclick="pdfAnnuale()">📄 Stampa PDF anno</button>
+  </div>
+  ${mesiConLav.map(mm=>{
+    const mLav=lavAnno.filter(l=>l.date.split('/')[1]===mm);
+    const mPeso=mLav.reduce((a,l)=>a+l.pp,0);
+    const mSfP=mLav.filter(l=>l.sf&&!l.sfu&&l.psf>0).reduce((a,l)=>a+l.psf,0);
+    const mSfR=mLav.filter(l=>l.sfu&&l.psf>0).reduce((a,l)=>a+l.psf,0);
+    const mCosto=mLav.reduce((a,l)=>a+l.ctot,0);
+    const miIdx=parseInt(mm,10)-1;
+    return`<div class="sf-section">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;flex-wrap:wrap;gap:6px">
+        <div style="font-weight:700;color:var(--accent);font-family:'Space Mono',monospace">${mNomi[miIdx]} ${anno}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;font-size:11px;color:var(--text2)">
+          <span>${mLav.length} lav.</span>
+          <span style="color:var(--accent)">${fmt(mPeso,1)} kg</span>
+          ${mSfR>0?`<span style="color:var(--blue)">♻️ ${fmt(mSfR,1)}kg</span>`:''}
+          ${mSfP>0?`<span style="color:var(--red)">🗑 ${fmt(mSfP,1)}kg</span>`:''}
+          <span style="color:var(--accent)">${fmtE(mCosto)}</span>
+        </div>
+      </div>
+      <div class="tw"><table class="mob-cards">
+        <thead><tr><th>Data</th><th>Cliente</th><th>Commessa</th><th>Materiale</th><th>Pezzo</th><th>Peso kg</th><th>Sfrido ♻️</th><th>Sfrido 🗑</th><th>Costo</th><th></th></tr></thead>
+        <tbody>${[...mLav].reverse().map(l=>`<tr>
+          <td data-l="Data" style="font-size:10px;color:var(--text3)">${esc(l.date)}</td>
+          <td data-l="Cliente">${esc(l.cli)}</td><td data-l="Commessa">${esc(l.com)}</td><td data-l="Materiale">${esc(l.mat)}</td><td data-l="Pezzo" style="font-size:10px">${esc(l.pdesc)}</td>
+          <td data-l="Peso kg" style="color:var(--accent)">${fmt(l.pp,2)}</td>
+          <td data-l="Sfrido ♻️" style="color:var(--blue)">${l.sfu&&l.psf>0?fmt(l.psf,2):'—'}</td>
+          <td data-l="Sfrido 🗑" style="color:var(--red)">${l.sf&&!l.sfu&&l.psf>0?fmt(l.psf,2):'—'}</td>
+          <td data-l="Costo" style="color:var(--accent)">${fmtE(l.ctot)}</td>
+          <td><button class="btn btn-s btn-bl" onclick="pBolla('${l.id}')">PDF</button></td>
+        </tr>`).join('')}</tbody></table></div>
+    </div>`;
+  }).join('')}
+  </div>`:''}
+
+  <!-- Snapshot mensili — cancellabili solo con PIN -->
+  ${snapsArr.length>0?`<div class="card"><div class="chd"><div class="ct">Snapshot Mensili Magazzino</div>
+    <div style="font-size:10px;color:var(--text3);font-family:'Space Mono',monospace">foto del magazzino a fine mese</div>
+  </div>
+  <div>${snapsArr.map(s=>{
+    // Residuo totale del mese (somma di tutti i res dei materiali attivi nello snapshot)
+    const resTotMag = (s.magazzino||[]).filter(m=>!m.esa).reduce((a,m)=>a+(m.res||0),0);
+    // Se l'elemento è già stato "chiuso" (closedAt), è la foto finale del mese
+    // Altrimenti (mese corrente) è la foto in tempo reale
+    const isCurrentMonth = !s.closedAt;
+    const closureLbl = isCurrentMonth ? '⚡ Mese in corso (aggiornato live)' : '📸 Chiuso il '+new Date(s.closedAt).toLocaleDateString('it-IT');
+    return`
+    <div class="sf-section" style="margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;flex-wrap:wrap;gap:8px">
+        <div style="font-weight:700;color:var(--text);font-family:'Space Mono',monospace;font-size:12px">${s.date} <span style="color:var(--text3);font-size:10px">(${s.key})</span><div style="font-size:10px;color:var(--text3);font-weight:400;margin-top:2px">${closureLbl}</div></div>
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          <button class="btn btn-s btn-bl" onclick="pdfStoricoSingolo('${s.id}')">PDF</button>
+          <button class="btn btn-s btn-d" onclick="delStorico('${s.id}')" title="Elimina (richiede PIN)">🗑</button>
+        </div>
+      </div>
+      <div class="dash-kpi" style="font-size:11px;margin-bottom:8px">
+        <div class="sinfo" style="margin-bottom:0;border-color:rgba(34,197,94,.35);background:rgba(34,197,94,.06)"><div class="sr"><span><strong>Residuo magazzino</strong></span><span style="font-weight:700;color:var(--green);font-size:13px">${fmt(resTotMag,1)} kg</span></div></div>
+        <div class="sinfo" style="margin-bottom:0"><div class="sr"><span>Valore magazzino</span><span style="font-weight:700;color:var(--accent)">${fmtE(s.valoreMag)}</span></div></div>
+        <div class="sinfo" style="margin-bottom:0;border-color:rgba(59,130,246,.25)"><div class="sr"><span>Sfridi riutil.</span><span style="color:var(--blue)">${fmt(s.totSfUsato,3)} kg</span></div></div>
+        <div class="sinfo" style="margin-bottom:0;border-color:rgba(239,68,68,.2)"><div class="sr"><span>Sfridi persi</span><span style="color:var(--red)">${fmt(s.totSfPerso,3)} kg</span></div></div>
+      </div>
+      ${s.magazzino.length?`<div class="sf-section-title">📦 Magazzino al ${s.date}</div>
+      <div class="tw"><table class="mob-cards"><thead><tr><th>Colata</th><th>Materiale</th><th>Tipo</th><th>Peso tot</th><th>Residuo kg</th><th>€/kg</th><th>Valore</th><th>Stato</th></tr></thead>
+      <tbody>${s.magazzino.map(m=>`<tr>
+        <td data-l="Colata">${esc(m.col||'')}</td>
+        <td data-l="Materiale">${esc(m.mat)}</td>
+        <td data-l="Tipo">${m.tipo}</td>
+        <td data-l="Peso tot" style="color:var(--text3)">${fmt(m.peso,3)}</td>
+        <td data-l="Residuo kg" style="font-weight:600;color:${m.esa?'var(--red)':'var(--green)'}">${fmt(m.res,3)}</td>
+        <td data-l="€/kg">${fmt(m.ckg,2)}</td>
+        <td data-l="Valore">${fmtE(m.res*(m.ckg||0))}</td>
+        <td data-l="Stato">${m.esa?'<span class="badge b-ex">Esaurito</span>':'<span class="badge b-ok">OK</span>'}</td>
+      </tr>`).join('')}</tbody></table></div>`:''}
+    </div>`}).join('')}
+  </div></div>`:''}`;
+}
+
+window.delStorico=function(id){
+  askPin('PIN per eliminare snapshot storico',()=>{
+    const idx=storici.findIndex(s=>s.id===id);
+    if(idx>=0){storici.splice(idx,1);save();render();}
+  });
+};
+
+// ═══ GUIDA ═══
+function rGuida(){
+  return`<div class="card">
+    <div class="g-h1">📖 Guida MetalTrack v4.3.9</div>
+    <p class="g-p">MetalTrack è un gestionale per il monitoraggio di lamiere, tondi, sfridi e lavorazioni. I dati sono salvati <strong>sia in locale</strong> (browser) <strong>sia su database cloud</strong> (Appwrite). Il sync avviene automaticamente.</p>
+    <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">
+      <button class="btn btn-p" onclick="pdfGuida()">📄 Scarica Guida PDF</button>
+    </div>
+    <div class="g-toc">
+      ${[['📱','PWA & Installazione'],['🟢','Pallino Connessione'],['🧪','Elenco Materiali'],['📦','Magazzino'],['♻️','Sfridi'],['🗑','Sfridi Persi'],['⚙️','Lavorazione'],['📋','Commesse'],['📅','Storico'],['🔢','Formule'],['💾','Dati & Backup']].map(([ic,t])=>`<div class="g-toc-item">${ic} ${t}</div>`).join('')}
+    </div>
+
+    <div class="g-section">
+      <div class="g-h2">📱 PWA & Installazione</div>
+      <p class="g-p">MetalTrack è una <strong>Progressive Web App</strong>: installabile su qualsiasi dispositivo senza app store. L'interfaccia si adatta automaticamente a PC, tablet e smartphone.</p>
+      <div class="g-kv"><span>PC (Chrome/Edge)</span><span>Icona ➕ nella barra indirizzi → Installa</span></div>
+      <div class="g-kv"><span>Android (Chrome)</span><span>Menu ⋮ → Aggiungi alla schermata Home</span></div>
+      <div class="g-kv"><span>iPhone (Safari)</span><span>Condividi □↑ → Aggiungi alla schermata Home</span></div>
+      <div class="g-tip">💡 Una volta installata, l'app si apre a schermo intero come un'app nativa e funziona anche senza connessione.</div>
+    </div>
+
+    <div class="g-section">
+      <div class="g-h2">🟢 Pallino Connessione Database</div>
+      <p class="g-p">Nella barra di navigazione in alto è presente un <strong>pallino colorato</strong> che mostra in tempo reale lo stato del sync con il database cloud.</p>
+      <div class="g-kv"><span>🟢 Verde (SYNC)</span><span>Connesso. Dati sincronizzati sul cloud.</span></div>
+      <div class="g-kv"><span>🟡 Giallo lampeggiante (SYNC…)</span><span>Salvataggio in corso.</span></div>
+      <div class="g-kv"><span>⚪ Grigio</span><span>Offline — i dati vengono salvati solo in locale.</span></div>
+      <div class="g-kv"><span>🟡 Giallo (IN CODA)</span><span>Salvataggio in attesa, verrà eseguito appena possibile.</span></div>
+      <div class="g-note">ℹ️ <strong>Sync automatico:</strong> quando torni online, tutti i dati salvati in locale vengono inviati al cloud automaticamente. Non serve fare nulla.</div>
+    </div>
+
+    <div class="g-section">
+      <div class="g-h2">🧪 Elenco Materiali (Nuovo v4.3.9)</div>
+      <p class="g-p">L'app gestisce un <strong>elenco di materiali con densità preimpostate</strong>. Quando aggiungi una lamiera o un tondo, lo selezioni da questa lista: il nome e la densità vengono compilati automaticamente.</p>
+      <div class="g-kv"><span>Materiali standard</span><span>Acciaio, Alluminio, Rame, Ottone, Titanio, Ghisa (precaricati)</span></div>
+      <div class="g-kv"><span>Aggiungere materiale</span><span>Dropdown → "⚙️ Gestisci elenco materiali…"</span></div>
+      <div class="g-kv"><span>Modificare densità</span><span>Sempre possibile nel campo a video, anche se il materiale è in lista</span></div>
+      <div class="g-kv"><span>Inserimento manuale</span><span>Dropdown → "✏️ Altro" per un materiale non in lista</span></div>
+      <div class="g-tip">💡 La densità è sempre modificabile inline sia quando aggiungi un materiale, sia nella tabella Magazzino. Il peso viene ricalcolato automaticamente.</div>
+    </div>
+
+    <div class="g-section">
+      <div class="g-h2">📦 Magazzino</div>
+      <p class="g-p">Inserisci le lamiere e i tondi disponibili. Per ogni materiale vengono calcolati automaticamente volume e peso in base alle dimensioni e alla densità.</p>
+      <div class="g-tip">💡 Il <strong>Residuo</strong> si aggiorna automaticamente ad ogni lavorazione registrata. Se arriva a 0, il materiale viene marcato come Esaurito e rimosso dal selettore delle nuove lavorazioni.</div>
+      <div class="g-kv"><span>Lamiera</span><span>L × W × Spessore (mm)</span></div>
+      <div class="g-kv"><span>Tondo</span><span>Ø Esterno × Lunghezza (mm)</span></div>
+      <div class="g-kv"><span>Snapshot</span><span>Fotografia istantanea del magazzino</span></div>
+    </div>
+    <div class="g-section">
+      <div class="g-h2">♻️ Sfridi Riutilizzabili</div>
+      <p class="g-p">Pezzi di materiale recuperabile dopo le lavorazioni. Li aggiungi manualmente selezionando la provenienza dal magazzino e la forma geometrica:</p>
+      <div class="g-kv"><span>Lamiera rettangolare</span><span>L × W × Spessore</span></div>
+      <div class="g-kv"><span>Disco pieno</span><span>Ø esterno × Spessore</span></div>
+      <div class="g-kv"><span>Anello</span><span>Ø esterno / Ø interno × Spessore</span></div>
+      <div class="g-kv"><span>Peso diretto</span><span>Inserimento manuale in kg</span></div>
+      <div class="g-note">ℹ️ Gli sfridi Riutilizzabili compaiono nel selettore materiali della sezione Lavorazione e possono essere usati come sorgente per nuovi pezzi.</div>
+    </div>
+    <div class="g-section">
+      <div class="g-h2">🗑 Sfridi Persi (Aggiornato v4.3.9)</div>
+      <p class="g-p">Gli sfridi non riutilizzabili sono materiale scartato. Puoi aggiungerli in due modi:</p>
+      <div class="g-step"><div class="g-num">1</div><div class="g-step-txt">Durante una <strong>lavorazione</strong>: scegli sfrido "Perso" — viene scalato automaticamente</div></div>
+      <div class="g-step"><div class="g-num">2</div><div class="g-step-txt"><strong>Manualmente</strong> in kg: pulsante "+ Aggiungi Sfrido Perso" nella sezione Sfridi</div></div>
+      <div class="g-warn">⚠️ <strong>Novità v4.3.9:</strong> lo sfrido perso manuale ora richiede OBBLIGATORIAMENTE la selezione della lamiera/tondo sorgente e viene scalato dal residuo. Se il materiale sorgente si esaurisce, sparisce automaticamente dal selettore delle lavorazioni.</div>
+      <div class="g-tip">💡 Entrambi i tipi compaiono nella sezione <strong>Sfridi Persi</strong> con un badge che indica l'origine (Manuale/Lavorazione). Gli sfridi persi manuali sono eliminabili con PIN e ripristinano il residuo del magazzino.</div>
+    </div>
+    <div class="g-section">
+      <div class="g-h2">⚙️ Lavorazione</div>
+      <div class="g-step"><div class="g-num">1</div><div class="g-step-txt">Seleziona il <strong>materiale sorgente</strong> (lamiera/tondo dal magazzino o uno sfrido riutilizzabile)</div></div>
+      <div class="g-step"><div class="g-num">2</div><div class="g-step-txt">Inserisci <strong>Cliente</strong> e <strong>N° Commessa</strong></div></div>
+      <div class="g-step"><div class="g-num">3</div><div class="g-step-txt">Inserisci le <strong>dimensioni del pezzo</strong> da produrre (Lato1 × Lato2 per lamiere, Lunghezza per tondi). Il peso viene calcolato automaticamente.</div></div>
+      <div class="g-step"><div class="g-num">4</div><div class="g-step-txt">Se c'è sfrido, seleziona la <strong>forma</strong> (rettangolare / disco / anello) e inserisci le dimensioni. Scegli se lo sfrido è Riutilizzabile o Perso.</div></div>
+      <div class="g-step"><div class="g-num">5</div><div class="g-step-txt">Premi <strong>Registra Lavorazione</strong>. Il magazzino verrà aggiornato automaticamente.</div></div>
+      <div class="g-warn">⚠️ Non è possibile registrare se il pezzo supera il peso disponibile del materiale selezionato.</div>
+    </div>
+    <div class="g-section">
+      <div class="g-h2">📋 Commesse</div>
+      <p class="g-p">Registro di tutte le lavorazioni reali. Mostra: Data, Cliente, Commessa, Materiale, Peso pezzo, Sfrido, Costo pezzo, Costo cliente (pezzo + sfrido), Margine sfrido riutilizzabile.</p>
+      <div class="g-tip">💡 <strong>Costo cliente</strong> = Peso lamiera tagliata × €/kg — il cliente paga sempre la lamiera che è stata tagliata per lui. Il <strong>Margine sfrido</strong> è il valore dello sfrido riutilizzabile che resta in magazzino come recupero.</div>
+    </div>
+    <div class="g-section">
+      <div class="g-h2">📅 Storico</div>
+      <p class="g-p">Analisi per giorno, mese e anno. Visualizza sempre i dati del periodo selezionato senza configurazioni. Il Report annuale mostra tutte le lavorazioni mese per mese, stampabile in PDF.</p>
+      <div class="g-kv"><span>Snapshot mensile</span><span>Fotografia dello stato magazzino (protetta da PIN per eliminazione)</span></div>
+      <div class="g-kv"><span>Report PDF annuale</span><span>Documento completo con tutte le lavorazioni per mese + totali anno</span></div>
+      <div class="g-warn">⚠️ Gli snapshot mensili NON sono cancellabili senza PIN.</div>
+    </div>
+    <div class="g-section">
+      <div class="g-h2">🔢 Formule di calcolo</div>
+      <div class="g-formula">Lamiera: P = L × W × t / 10⁹ × ρ (kg)</div>
+      <div class="g-formula">Tondo: P = π × (Ø/2)² × Lunghezza / 10⁹ × ρ (kg)</div>
+      <div class="g-formula">Disco: P = π × (Øest/2)² × sp / 10⁹ × ρ (kg)</div>
+      <div class="g-formula">Anello: P = π × ((Øest/2)² − (Øint/2)²) × sp / 10⁹ × ρ (kg)</div>
+      <div class="g-formula">Costo pezzo = Peso pezzo × €/kg</div>
+      <div class="g-formula">Costo cliente = Peso lamiera tagliata × €/kg</div>
+      <div class="g-formula">Se sfrido riutilizzabile → Sottratto magazzino = Pezzo − Sfrido ♻️</div>
+      <div class="g-formula">Se sfrido perso → Sottratto magazzino = Pezzo intero</div>
+      <div style="margin-top:8px">
+        <div class="g-kv"><span>Acciaio</span><span>7850 kg/m³</span></div>
+        <div class="g-kv"><span>Alluminio</span><span>2700 kg/m³</span></div>
+        <div class="g-kv"><span>Rame</span><span>8900 kg/m³</span></div>
+        <div class="g-kv"><span>Ottone</span><span>8500 kg/m³</span></div>
+        <div class="g-kv"><span>Titanio</span><span>4500 kg/m³</span></div>
+        <div class="g-kv"><span>Ghisa</span><span>7200 kg/m³</span></div>
+      </div>
+    </div>
+    <div class="g-section">
+      <div class="g-h2">💾 Dati & Backup</div>
+      <p class="g-p">MetalTrack usa una strategia <strong>doppio livello</strong>: dati salvati subito in locale (browser) e sincronizzati automaticamente sul cloud Appwrite. I dati sono quindi recuperabili da qualsiasi dispositivo.</p>
+      <div class="g-kv"><span>localStorage</span><span>Salvataggio immediato sul browser</span></div>
+      <div class="g-kv"><span>Appwrite Cloud</span><span>Database remoto, sync automatico</span></div>
+      <div class="g-kv"><span>CSV Export</span><span>Backup manuale consigliato dalla sezione Commesse</span></div>
+      <div class="g-tip">💡 Anche se pulisci la cache del browser, i dati sul cloud rimangono. Al prossimo avvio vengono scaricati automaticamente.</div>
+      <p class="g-p" style="margin-top:10px">Il PIN predefinito è <strong>1234</strong> — cambialo subito con il pulsante 🔑 in alto a destra.</p>
+    </div>
+  </div>`;
+}
+
+// ═══ MODALS ═══
+function rMod(){
+  if(!S.modal)return'';const t=S.modal.type;
+  if(t==='add')return rAdd();
+  if(t==='rep')return rRep(S.modal.data);
+  if(t==='snaps')return rSnaps();
+  if(t==='pin')return rPinModal();
+  if(t==='changepin')return rChangePinModal();
+  if(t==='addsf')return rAddSfModal();
+  if(t==='addsfperso')return rAddSfPersoModal();
+  if(t==='matlist')return rMatListModal();
+  return'';
+}
+
+// ── Modale Aggiungi Sfrido Perso manuale ──
+// Richiede il materiale di origine: lo sfrido perso viene scalato dal residuo della lamiera/tondo.
+function rAddSfPersoModal(){
+  const magOpt=mag.filter(m=>!m.esa&&m.res>0.001).map(m=>`<option value="${m.id}" data-mat="${esc(m.mat)}" data-col="${esc(m.col||'')}" data-tipo="${m.tipo}" data-res="${m.res}" data-ckg="${m.ckg||0}">[${m.tipo==='lamiera'?'L':'T'}] ${esc(m.mat)} — ${esc(m.col||'—')} (disp: ${fmt(m.res,3)}kg, ${fmt(m.ckg,2)}€/kg)</option>`).join('');
+  return`<div class="mo" onclick="S.modal=null;render()"><div class="md fade" onclick="event.stopPropagation()" style="max-width:540px">
+    <div class="md-t">🗑 Aggiungi Sfrido Perso</div>
+    <p style="font-size:12px;color:var(--text3);margin-bottom:12px">Seleziona la lamiera/tondo sorgente e inserisci i kg di sfrido perso. Il peso verrà <strong>scalato dal residuo</strong> del materiale selezionato.</p>
+    <div class="fg">
+      <div class="fi s2"><label class="fl">Materiale sorgente <span style="color:var(--red)">*</span></label>
+        <select class="fx" id="asp_mag" onchange="aspMagChange()">
+          <option value="">— Seleziona lamiera/tondo —</option>
+          ${magOpt}
+        </select>
+      </div>
+    </div>
+    <div id="asp_info" style="display:none">
+      <div id="asp_src_info" class="sinfo" style="margin-bottom:10px"></div>
+      <div class="fg">
+        <div class="fi s2"><label class="fl">Peso sfrido perso (kg) <span style="color:var(--red)">*</span></label><input class="fx" id="asp_peso" type="number" placeholder="es. 1.250" step="0.001" oninput="aspCalc()"></div>
+        <div class="fi"><label class="fl">€/kg</label><input class="fx" id="asp_ckg" type="number" placeholder="0.00" step="0.01" oninput="aspCalc()"></div>
+        <div class="fi"><label class="fl">Data</label><input class="fx" id="asp_date" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
+        <div class="fi s2"><label class="fl">Descrizione / Note (opzionale)</label><input class="fx" id="asp_pdesc" placeholder="es. sfrido da taglio"></div>
+        <div class="fi"><label class="fl">Cliente (opzionale)</label><input class="fx" id="asp_cli" placeholder="—"></div>
+        <div class="fi"><label class="fl">N° Commessa (opzionale)</label><input class="fx" id="asp_com" placeholder="—"></div>
+      </div>
+      <div id="asp_calc" class="sinfo" style="display:none;margin-bottom:10px"></div>
+    </div>
+    <div class="md-footer" style="margin-top:14px">
+      <button class="btn btn-g" onclick="S.modal=null;render()">Annulla</button>
+      <button class="btn btn-d" id="asp_save" onclick="aspSalva()">🗑 Registra Sfrido Perso</button>
+    </div>
+  </div></div>`;
+}
+window.aspMagChange=function(){
+  const sel=document.getElementById('asp_mag');
+  const v=sel.value;
+  const info=document.getElementById('asp_info');
+  const srcInfo=document.getElementById('asp_src_info');
+  if(!v){info.style.display='none';return;}
+  info.style.display='block';
+  const m=mag.find(x=>x.id===v);
+  if(m){
+    srcInfo.innerHTML=`<div class="sr"><span>Materiale</span><span style="color:var(--text);font-weight:600">${esc(m.mat)} ${m.col?'— '+esc(m.col):''}</span></div>
+      <div class="sr"><span>Tipo</span><span>${m.tipo==='lamiera'?'Lamiera':'Tondo'}</span></div>
+      <div class="sr"><span>Disponibile</span><span style="color:var(--green);font-weight:700">${fmt(m.res,3)} kg</span></div>
+      <div class="sr"><span>€/kg</span><span>${fmt(m.ckg,2)}</span></div>`;
+    // Pre-popola €/kg dal materiale
+    const ckgInput=document.getElementById('asp_ckg');
+    if(ckgInput&&!ckgInput.value)ckgInput.value=m.ckg||0;
+  }
+  aspCalc();
+};
+window.aspCalc=function(){
+  const peso=+(document.getElementById('asp_peso')?.value||0);
+  const ckg=+(document.getElementById('asp_ckg')?.value||0);
+  const magVal=document.getElementById('asp_mag')?.value;
+  const calc=document.getElementById('asp_calc');
+  const saveBtn=document.getElementById('asp_save');
+  if(!calc)return;
+  if(peso>0&&magVal){
+    const m=mag.find(x=>x.id===magVal);
+    const disp=m?m.res:0;
+    const excess=peso>disp+0.001;
+    calc.style.display='block';
+    calc.innerHTML=`<div class="sr"><span><strong>Peso sfrido perso</strong></span><span style="color:var(--red);font-weight:700">${fmt(peso,3)} kg</span></div>
+      ${ckg>0?`<div class="sr"><span>Valore perso</span><span style="color:var(--red)">${fmtE(peso*ckg)}</span></div>`:''}
+      <div class="sr"><span>Residuo lamiera dopo</span><span style="color:${excess?'var(--red)':'var(--green)'};font-weight:600">${fmt(Math.max(0,disp-peso),3)} kg</span></div>
+      ${excess?`<div style="margin-top:6px;padding:6px 10px;background:var(--red-bg);color:var(--red);border-radius:4px;font-size:11px;font-weight:600">⚠️ Il peso supera il residuo disponibile (${fmt(disp,3)} kg)</div>`:''}`;
+    if(saveBtn)saveBtn.disabled=excess;
+  } else { 
+    calc.style.display='none';
+    if(saveBtn)saveBtn.disabled=false;
+  }
+};
+window.aspSalva=function(){
+  const magVal=document.getElementById('asp_mag').value;
+  if(!magVal){alert('Seleziona il materiale sorgente.');return;}
+  const peso=+(document.getElementById('asp_peso')?.value||0);
+  if(peso<=0){alert('Inserire il peso dello sfrido perso.');return;}
+  const m=mag.find(x=>x.id===magVal);
+  if(!m){alert('Materiale sorgente non trovato.');return;}
+  if(peso>m.res+0.001){
+    alert(`Il peso (${fmt(peso,3)} kg) supera il residuo disponibile (${fmt(m.res,3)} kg).`);
+    return;
+  }
+  const ckg=+(document.getElementById('asp_ckg')?.value||m.ckg||0);
+  const cli=document.getElementById('asp_cli')?.value||'—';
+  const com=document.getElementById('asp_com')?.value||'—';
+  const pdesc=document.getElementById('asp_pdesc')?.value||'sfrido perso manuale';
+  const dateVal=document.getElementById('asp_date')?.value||new Date().toISOString().slice(0,10);
+  const entry={
+    id:uid(),
+    date:new Date(dateVal).toLocaleDateString('it-IT'),
+    cli,com,
+    mat:m.mat,col:m.col||'',tipo:m.tipo,
+    sid:m.id,
+    pdesc,
+    pp:0,psf:peso,psot:peso,
+    sf:true,sfu:false,
+    ckg,ctot:0,
+    dens:m.dens||7850,spessore:m.tipo==='lamiera'?m.dim.t:m.dim.de,
+    _sfPersoManuale:true
+  };
+  lav.push(entry);
+  // Sottrae immediatamente dal magazzino
+  m.res=Math.max(0,m.res-peso);
+  if(m.res<=0.001&&!m.esa){
+    m.esa=true;
+    if(!m.dataEsaurimento)m.dataEsaurimento=new Date().toLocaleDateString('it-IT');
+  }
+  save();
+  S.modal=null;
+  render();
+};
+
+function rAdd(){
+  const matOpt=materiali.map(mt=>`<option value="${esc(mt.id)}" data-dens="${mt.dens}">${esc(mt.nome)} (${mt.dens} kg/m³)</option>`).join('');
+  return`<div class="mo" onclick="S.modal=null;render()"><div class="md fade" onclick="event.stopPropagation()">
+    <div class="md-t">Aggiungi Materiale</div>
+    <div class="fg">
+      <div class="fi"><label class="fl">N° Colata</label><input class="fx" id="am_c" placeholder="COL-001"></div>
+      <div class="fi"><label class="fl">Partita <span style="color:var(--text3);font-weight:400">(da bolla scarico)</span></label><input class="fx" id="am_p" placeholder="es. P-2024-07"></div>
+      <div class="fi s2"><label class="fl">Materiale</label>
+        <select class="fx" id="am_mat_sel" onchange="amMatSelChange()">
+          <option value="">— Seleziona dalla lista —</option>
+          ${matOpt}
+          <option value="__custom__">✏️ Altro (inserimento manuale)</option>
+          <option value="__gestisci__">⚙️ Gestisci elenco materiali…</option>
+        </select>
+      </div>
+      <div class="fi s2" id="am_mat_custom_row" style="display:none"><label class="fl">Nome materiale (personalizzato)</label><input class="fx" id="am_m" placeholder="es. Inox 304"></div>
+      <div class="fi"><label class="fl">Tipo</label><select class="fx" id="am_t" onchange="amTC()"><option value="lamiera">Lamiera</option><option value="tondo">Tondo</option></select></div>
+      <div class="fi"><label class="fl">Densità kg/m³ <span style="color:var(--text3);font-weight:400">(modificabile)</span></label><input class="fx" id="am_d" type="number" value="7850"></div>
+      <div class="fi"><label class="fl">€/kg</label><input class="fx" id="am_k" type="number" placeholder="0.80"></div>
+      <div class="fi"><label class="fl">Data inserimento</label><input class="fx" id="am_di" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
+    </div>
+    <div id="amF"><div class="fg"><div class="fi"><label class="fl">Lungh mm</label><input class="fx" id="am_l" type="number"></div><div class="fi"><label class="fl">Largh mm</label><input class="fx" id="am_w" type="number"></div><div class="fi"><label class="fl">Spess mm</label><input class="fx" id="am_s" type="number"></div></div></div>
+    <div class="md-footer" style="margin-top:12px"><button class="btn btn-g" onclick="S.modal=null;render()">Annulla</button><button class="btn btn-p" onclick="addM()">Aggiungi</button></div>
+  </div></div>`;
+}
+window.amMatSelChange=function(){
+  const sel=$('#am_mat_sel');
+  const v=sel.value;
+  const customRow=$('#am_mat_custom_row');
+  if(v==='__gestisci__'){
+    // Apri modale gestione materiali - salva lo stato corrente per ripristinarlo
+    S.modal={type:'matlist',returnTo:'add'};
+    render();
+    return;
+  }
+  if(v==='__custom__'){
+    customRow.style.display='flex';
+    $('#am_m').value='';
+    $('#am_m').focus();
+    return;
+  }
+  if(v===''){
+    customRow.style.display='none';
+    $('#am_m').value='';
+    return;
+  }
+  // Materiale dalla lista: popola nome e densità
+  customRow.style.display='none';
+  const mt=materiali.find(m=>m.id===v);
+  if(mt){
+    $('#am_m').value=mt.nome;
+    $('#am_d').value=mt.dens;
+  }
+};
+window.amTC=function(){
+  const t=$('#am_t').value;
+  $('#amF').innerHTML=t==='lamiera'
+    ?`<div class="fg"><div class="fi"><label class="fl">Lungh mm</label><input class="fx" id="am_l" type="number"></div><div class="fi"><label class="fl">Largh mm</label><input class="fx" id="am_w" type="number"></div><div class="fi"><label class="fl">Spess mm</label><input class="fx" id="am_s" type="number"></div></div>`
+    :`<div class="fg"><div class="fi"><label class="fl">Ø Est mm</label><input class="fx" id="am_de" type="number"></div><div class="fi"><label class="fl">Lungh mm</label><input class="fx" id="am_lu" type="number"></div></div>`;
+}
+window.addM=function(){
+  const c=$('#am_c').value;
+  const part=$('#am_p')?.value||'';
+  const matSel=$('#am_mat_sel').value;
+  // Se è selezionato un materiale dalla lista, usa quel nome; altrimenti usa il custom
+  let m='';
+  if(matSel&&matSel!=='__custom__'&&matSel!=='__gestisci__'){
+    const mt=materiali.find(x=>x.id===matSel);
+    m=mt?mt.nome:'';
+  } else {
+    m=$('#am_m').value||'';
+  }
+  if(!m){alert('Seleziona o inserisci un materiale.');return;}
+  const t=$('#am_t').value;
+  const d=+(($('#am_d').value)||7850),k=+(($('#am_k').value)||0);
+  const di=$('#am_di').value;
+  let dim;
+  if(t==='lamiera')dim={l:+($('#am_l')?.value||0),w:+($('#am_w')?.value||0),t:+($('#am_s')?.value||0)};
+  else dim={de:+($('#am_de')?.value||0),lu:+($('#am_lu')?.value||0)};
+  const it={id:uid(),col:c,part,mat:m,tipo:t,dim,sup:0,vol:0,dens:d,peso:0,ckg:k,res:0,esa:false,
+    dataIns:di?new Date(di).toLocaleDateString('it-IT'):'',dataEsaurimento:''};
+  calcItem(it);it.res=it.peso;mag.push(it);save();S.modal=null;render();
+}
+
+// ═══ GESTIONE ELENCO MATERIALI ═══
+function rMatListModal(){
+  return`<div class="mo" onclick="matListBack()"><div class="md fade" onclick="event.stopPropagation()" style="max-width:560px">
+    <div class="md-t">⚙️ Gestisci Elenco Materiali</div>
+    <p style="font-size:12px;color:var(--text3);margin-bottom:14px">Aggiungi nuovi materiali o modifica densità. I materiali sono disponibili quando aggiungi una lamiera, un tondo o uno sfrido manuale.</p>
+    <div class="fg" style="grid-template-columns:2fr 1fr auto;align-items:end;gap:8px">
+      <div class="fi"><label class="fl">Nome materiale</label><input class="fx" id="mat_new_nome" placeholder="es. Inox 304"></div>
+      <div class="fi"><label class="fl">Densità kg/m³</label><input class="fx" id="mat_new_dens" type="number" placeholder="7900"></div>
+      <button class="btn btn-p" onclick="matAdd()" style="height:48px">+ Aggiungi</button>
+    </div>
+    <div style="max-height:50vh;overflow-y:auto;margin-top:8px">
+      ${materiali.length===0?'<div class="empty">Nessun materiale in elenco</div>':`<table style="width:100%;font-size:12px">
+        <thead><tr><th style="text-align:left">Nome</th><th>Densità (kg/m³)</th><th></th></tr></thead>
+        <tbody>${materiali.map((mt,i)=>`<tr>
+          <td style="padding:6px 4px"><input class="ie ie-w" style="width:100%;text-align:left" value="${esc(mt.nome)}" onchange="materiali[${i}].nome=this.value;save()"></td>
+          <td style="padding:6px 4px"><input class="ie" type="number" value="${mt.dens}" onchange="materiali[${i}].dens=+this.value;save()"></td>
+          <td style="padding:6px 4px;text-align:right"><button class="btn btn-s btn-d" onclick="matDel(${i})">🗑</button></td>
+        </tr>`).join('')}</tbody>
+      </table>`}
+    </div>
+    <div class="md-footer" style="margin-top:14px">
+      <button class="btn btn-p" onclick="matListBack()">Fatto</button>
+    </div>
+  </div></div>`;
+}
+window.matAdd=function(){
+  const nome=$('#mat_new_nome').value.trim();
+  const dens=+($('#mat_new_dens').value||0);
+  if(!nome){alert('Inserire nome materiale.');return;}
+  if(dens<=0){alert('Inserire densità valida.');return;}
+  if(materiali.some(mt=>mt.nome.toLowerCase()===nome.toLowerCase())){
+    if(!confirm('Esiste già un materiale con questo nome. Aggiungere comunque?'))return;
+  }
+  materiali.push({id:uid(),nome,dens});
+  save();
+  render();
+};
+window.matDel=function(i){
+  const mt=materiali[i];
+  if(!mt)return;
+  if(!confirm(`Eliminare "${mt.nome}" dall'elenco materiali?\n(I materiali già inseriti in magazzino NON vengono modificati)`))return;
+  materiali.splice(i,1);
+  save();
+  render();
+};
+window.matListBack=function(){
+  // Torna alla modale precedente se specificata, altrimenti chiudi
+  const rt=S.modal&&S.modal.returnTo;
+  if(rt==='add'){S.modal={type:'add'};render();}
+  else if(rt==='addsf'){S.modal={type:'addsf'};render();}
+  else if(rt==='addsfperso'){S.modal={type:'addsfperso'};render();}
+  else{S.modal=null;render();}
+};
+
+function rRep(l){
+  return`<div class="mo" onclick="S.modal=null;render()"><div class="md fade" onclick="event.stopPropagation()">
+    <div class="md-t">✅ Lavorazione Registrata</div>
+    <div class="rp">
+      <div class="rr"><span>Cliente</span><span style="font-weight:600;color:var(--text)">${esc(l.cli)}</span></div>
+      <div class="rr"><span>Commessa</span><span>${esc(l.com)}</span></div>
+      <div class="rr"><span>Data</span><span>${esc(l.date)}</span></div>
+      <div class="rr"><span>Materiale</span><span>${esc(l.mat)} — ${esc(l.col||'')}</span></div>
+      <div class="rr"><span>Pezzo</span><span>${esc(l.pdesc)}</span></div>
+      <div class="rr"><span>Peso pezzo</span><span style="color:var(--accent)">${fmt(l.pp,3)} kg</span></div>
+      ${l.sf?`<div class="rr"><span>Sfrido</span><span>${fmt(l.psf,3)} kg — <span class="${l.sfu?'sf-used-badge':'sf-lost-badge'}">${l.sfu?'Riutilizzabile ✅':'Perso ❌'}</span></span></div>`:''}
+      <div class="rr"><span><strong>Sottratto magazzino</strong></span><span><strong>${fmt(l.psot,3)} kg</strong></span></div>
+      <div class="rr"><span><strong>Costo pezzo</strong></span><span style="color:var(--accent)"><strong>${fmtE(l.ctot)}</strong></span></div>
+    </div>
+    <div class="md-footer" style="margin-top:14px">
+      <button class="btn btn-bl" onclick="pBolla('${l.id}')">Stampa PDF</button>
+      <button class="btn btn-p" onclick="S.modal=null;render()">Chiudi</button>
+    </div>
+  </div></div>`;
+}
+
+function rSnaps(){
+  return`<div class="mo" onclick="S.modal=null;render()"><div class="md fade" onclick="event.stopPropagation()">
+    <div class="md-t">Storico Snapshot</div>
+    ${snaps.length===0?'<div class="empty">Nessuno snapshot</div>':`<div style="max-height:60vh;overflow-y:auto">${[...snaps].reverse().map(s=>`<div class="sinfo" style="margin-bottom:8px"><div style="font-weight:600;color:var(--text);margin-bottom:6px">${esc(s.date)}</div>${s.data.map(d=>`<div class="sr"><span>${esc(d.col||'')} ${esc(d.mat)} ${d.tipo==='tondo'?'(T)':''}</span><span style="font-weight:600;color:${d.esa?'var(--red)':'var(--green)'}">${fmt(d.res,3)} kg</span></div>`).join('')}</div>`).join('')}</div>`}
+    <div style="text-align:right;margin-top:12px"><button class="btn btn-p" onclick="S.modal=null;render()">Chiudi</button></div>
+  </div></div>`;
+}
+
+// ═══ CAMBIO PIN (accesso o eliminazione) ═══
+// Flusso: select → old → new1 → new2
+let cpState={step:'select',target:'',old:'',new1:'',new2:'',err:''};
+function rChangePinModal(){
+  // Step 1: scelta target
+  if(cpState.step==='select'){
+    return`<div class="mo" onclick="S.modal=null;cpState={step:'select',target:'',old:'',new1:'',new2:'',err:''};render()"><div class="md fade" onclick="event.stopPropagation()" style="max-width:380px">
+      <div class="md-t">🔑 Cambia PIN — scegli quale</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.5">L'app usa <strong>due PIN distinti</strong>. Indica chiaramente quello che vuoi cambiare:</div>
+      <button class="btn" style="width:100%;margin-bottom:10px;justify-content:flex-start;gap:10px;padding:14px;border:1px solid rgba(59,130,246,.35);background:rgba(59,130,246,.08)" onclick="cpStart('access')">
+        <div style="font-size:18px">🔓</div>
+        <div style="text-align:left;flex:1">
+          <div style="font-weight:700;color:var(--blue);font-size:13px">PIN di ACCESSO</div>
+          <div style="font-size:10px;color:var(--text3);font-weight:400">Richiesto all'apertura dell'app (schermata di login)</div>
+        </div>
+      </button>
+      <button class="btn" style="width:100%;margin-bottom:6px;justify-content:flex-start;gap:10px;padding:14px;border:1px solid rgba(239,68,68,.35);background:rgba(239,68,68,.08)" onclick="cpStart('del')">
+        <div style="font-size:18px">🗑</div>
+        <div style="text-align:left;flex:1">
+          <div style="font-weight:700;color:var(--red);font-size:13px">PIN di ELIMINAZIONE</div>
+          <div style="font-size:10px;color:var(--text3);font-weight:400">Richiesto per cancellare commesse, sfridi, snapshot, righe magazzino</div>
+        </div>
+      </button>
+      <div style="text-align:right;margin-top:14px"><button class="btn btn-g" onclick="S.modal=null;cpState={step:'select',target:'',old:'',new1:'',new2:'',err:''};render()">Annulla</button></div>
+    </div></div>`;
+  }
+  // Step 2-4: PIN input
+  const targetLabel = cpState.target==='access' ? 'PIN di ACCESSO' : 'PIN di ELIMINAZIONE';
+  const targetCol   = cpState.target==='access' ? 'var(--blue)' : 'var(--red)';
+  const stepLabel={old:'Inserisci PIN attuale',new1:'Inserisci NUOVO PIN (4 cifre)',new2:'Conferma il nuovo PIN'}[cpState.step];
+  const cur=cpState.step==='old'?cpState.old:cpState.step==='new1'?cpState.new1:cpState.new2;
+  return`<div class="mo"><div class="md fade" onclick="event.stopPropagation()" style="max-width:320px">
+    <div class="md-t">🔑 Cambia ${targetLabel}</div>
+    <div style="text-align:center;font-size:11px;font-family:'Space Mono',monospace;color:${targetCol};margin-bottom:8px;letter-spacing:.6px">${cpState.target==='access'?'🔓 Login app':'🗑 Eliminazioni'}</div>
+    <div style="text-align:center;font-size:12px;color:var(--text2);margin-bottom:4px">${esc(stepLabel)}</div>
+    <div class="pin-dots">${[0,1,2,3].map(i=>`<div class="pin-dot ${i<cur.length?'filled':''}" id="cpd${i}"></div>`).join('')}</div>
+    <div id="cp-err" style="text-align:center;color:var(--red);font-size:12px;min-height:18px;margin-bottom:6px">${esc(cpState.err)}</div>
+    <div class="pin-grid">
+      ${[1,2,3,4,5,6,7,8,9].map(k=>`<button class="pin-key" onclick="cpKey('${k}')">${k}</button>`).join('')}
+      <span></span>
+      <button class="pin-key" onclick="cpKey('0')">0</button>
+      <button class="pin-key del" onclick="cpKey('⌫')">⌫</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="btn btn-g" style="flex:1" onclick="cpState={step:'select',target:'',old:'',new1:'',new2:'',err:''};render()">← Indietro</button>
+      <button class="btn btn-g" style="flex:1" onclick="S.modal=null;cpState={step:'select',target:'',old:'',new1:'',new2:'',err:''};render()">Annulla</button>
+    </div>
+  </div></div>`;
+}
+window.cpStart=function(target){
+  cpState={step:'old',target:target,old:'',new1:'',new2:'',err:''};
+  render();
+};
+window.cpKey=function(k){
+  const step=cpState.step;
+  if(step==='select')return;
+  if(k==='⌫'){cpState[step]=cpState[step].slice(0,-1);}
+  else if(cpState[step].length<4){cpState[step]+=k;}
+  [0,1,2,3].forEach(i=>{const d=document.getElementById('cpd'+i);if(d)d.className='pin-dot'+(i<cpState[step].length?' filled':'');});
+  if(cpState[step].length===4){
+    setTimeout(()=>{
+      // Determina la chiave del PIN (access → 'pin', del → 'pinDel')
+      const pinKey = cpState.target==='access' ? 'pin' : 'pinDel';
+      const currentPin = appConfig[pinKey] || (pinKey==='pinDel' ? appConfig.pin : '1234');
+      if(step==='old'){
+        if(cpState.old===currentPin){cpState.step='new1';cpState.err='';render();}
+        else{cpState.old='';cpState.err='PIN attuale errato. Riprova.';render();}
+      }else if(step==='new1'){
+        cpState.step='new2';cpState.err='';render();
+      }else if(step==='new2'){
+        if(cpState.new1===cpState.new2){
+          appConfig[pinKey]=cpState.new1;
+          save();
+          const label = cpState.target==='access' ? 'PIN di ACCESSO' : 'PIN di ELIMINAZIONE';
+          S.modal=null;
+          cpState={step:'select',target:'',old:'',new1:'',new2:'',err:''};
+          render();
+          setTimeout(()=>alert('✅ '+label+' cambiato con successo!'),100);
+        }
+        else{cpState.new2='';cpState.err='I PIN non coincidono.';render();}
+      }
+    },200);
+  }
+};
+
+// ═══ PDF BOLLA ═══
+window.pBolla=async function(id){
+  const l=lav.find(x=>x.id===id);if(!l){alert('Lavorazione non trovata');return;}
+  try{
+    const jsPDF=await getJsPDF();
+    const doc=new jsPDF();const W=210,M=15;
+    doc.setFillColor(12,15,20);doc.rect(0,0,W,40,'F');
+    doc.setTextColor(249,115,22);doc.setFontSize(22);doc.setFont('helvetica','bold');doc.text('METALTRACK',M,22);
+    doc.setFontSize(10);doc.setTextColor(155,163,181);doc.text('Bolla di Lavorazione',M,30);
+    doc.setTextColor(255);doc.text('N. '+String(l.com),W-M,22,{align:'right'});doc.text(String(l.date),W-M,30,{align:'right'});
+    doc.setTextColor(30);let y=52;
+    doc.setFontSize(11);doc.setFont('helvetica','bold');doc.text('DATI COMMESSA',M,y);y+=8;
+    doc.setFont('helvetica','normal');doc.setFontSize(10);
+    [['Cliente:',String(l.cli)],['Commessa:',String(l.com)],['Materiale:',String(l.mat)+' — Colata: '+String(l.col||'N/D')+(l.part?' · Partita: '+String(l.part):'')],['Tipo:',l.tipo==='lamiera'?'Lamiera':'Tondo']].forEach(([k,v])=>{
+      doc.setFont('helvetica','bold');doc.text(k,M,y);doc.setFont('helvetica','normal');doc.text(v,M+40,y);y+=6;
+    });
+    y+=6;doc.setFont('helvetica','bold');doc.setFontSize(11);doc.text('DETTAGLIO',M,y);y+=4;
+    const rows=[['Pezzo',String(l.pdesc),'mm'],['Superficie',fmt(l.sup,4),'m²'],['Volume',fmt(l.vol,6),'m³'],['Densità',String(l.dens||7850),'kg/m³'],['Peso pezzo',fmt(l.pp,3),'kg']];
+    if(l.sf&&l.psf>0){rows.push(['Peso sfrido',fmt(l.psf,3),'kg']);rows.push(['Tipo sfrido',l.sfu?'Riutilizzabile':'Perso','']);}
+    rows.push(['PESO SOTTRATTO MAG.',fmt(l.psot,3),'kg']);
+    rows.push(['Costo/kg',fmtE(l.ckg),'']);
+    rows.push(['COSTO PEZZO',fmtE(l.ctot),'']);
+    doc.autoTable({startY:y,margin:{left:M,right:M},headStyles:{fillColor:[249,115,22],textColor:255,fontSize:9},bodyStyles:{fontSize:9},head:[['Voce','Valore','U.M.']],body:rows});
+    y=doc.lastAutoTable.finalY+12;if(y>260)y=260;
+    doc.setDrawColor(180);doc.line(M,y+15,M+60,y+15);doc.line(W-M-60,y+15,W-M,y+15);
+    doc.setFontSize(8);doc.setTextColor(120);doc.text('Firma Operatore',M,y+20);doc.text('Firma Magazziniere',W-M-60,y+20);
+    doc.setFontSize(7);doc.setTextColor(160);doc.text('Generato da MetalTrack v4.3.9',W/2,285,{align:'center'});
+    doc.save('Bolla_'+String(l.com)+'_'+String(l.date).replace(/[\/\\ :]/g,'-')+'.pdf');
+  }catch(e){alert('Errore PDF: '+e.message);}
+}
+
+// ═══ PDF ANNUALE ═══
+window.pdfAnnuale=async function(){
+  try{
+    const jsPDF=await getJsPDF();
+    const doc=new jsPDF();const W=210,M=14;let y=20;
+    const anno=new Date().getFullYear();
+    const lavReali=lav.filter(l=>!l._sfPersoManuale&&!l.manuale);
+    const sfPersiManuali=lav.filter(l=>l._sfPersoManuale);
+    doc.setFontSize(20);doc.setFont('helvetica','bold');doc.setTextColor(249,115,22);doc.text('METALTRACK — Report Annuale '+anno,M,y);y+=8;
+    doc.setFontSize(8);doc.setTextColor(120);doc.text('Generato il '+new Date().toLocaleString('it-IT'),M,y);y+=12;
+    const mNomi=['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
+    let totGlob={pezzi:0,peso:0,sfR:0,sfP:0,costo:0};
+    for(let mi=0;mi<12;mi++){
+      const mm=String(mi+1).padStart(2,'0');
+      const mmMatch=l=>l.date&&(()=>{const p=l.date.split('/');return p.length>=3&&p[1]===mm&&p[2].startsWith(String(anno));})();
+      const meseL=lavReali.filter(mmMatch);
+      const meseSfManuali=sfPersiManuali.filter(mmMatch);
+      if(meseL.length===0&&meseSfManuali.length===0)continue;
+      if(y>250){doc.addPage();y=20;}
+      const mesePeso=meseL.reduce((a,l)=>a+l.pp,0);
+      // FIX: sfrido perso mensile = lavorazioni + manuali
+      const meseSfPLav=meseL.filter(l=>l.sf&&!l.sfu&&l.psf>0).reduce((a,l)=>a+l.psf,0);
+      const meseSfPMan=meseSfManuali.reduce((a,l)=>a+l.psf,0);
+      const meseSfP=meseSfPLav+meseSfPMan;
+      const meseSfR=meseL.filter(l=>l.sfu&&l.psf>0).reduce((a,l)=>a+l.psf,0);
+      const meseCosto=meseL.reduce((a,l)=>a+l.ctot,0);
+      totGlob.pezzi+=meseL.length;totGlob.peso+=mesePeso;totGlob.sfR+=meseSfR;totGlob.sfP+=meseSfP;totGlob.costo+=meseCosto;
+      doc.setFillColor(249,115,22);doc.rect(M,y-4,W-M*2,8,'F');
+      doc.setFontSize(11);doc.setFont('helvetica','bold');doc.setTextColor(255);doc.text(mNomi[mi]+' '+anno,M+2,y+1);y+=8;
+      doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(80);
+      doc.text(`Lav: ${meseL.length} | Peso: ${fmt(mesePeso,2)} kg | ♻️: ${fmt(meseSfR,2)} kg | Perso: ${fmt(meseSfP,2)} kg | Costo: ${fmtE(meseCosto)}`,M,y);y+=3;
+      const rows=meseL.map(l=>[l.date.split(',')[0],l.cli,l.com,l.mat,l.pdesc,fmt(l.pp,2),l.sfu&&l.psf>0?fmt(l.psf,2):'—',l.sf&&!l.sfu&&l.psf>0?fmt(l.psf,2):'—',fmtE(l.ctot)]);
+      doc.autoTable({startY:y,margin:{left:M,right:M},headStyles:{fillColor:[34,40,56],textColor:200,fontSize:7},bodyStyles:{fontSize:7},head:[['Data','Cliente','Commessa','Mat.','Pezzo','Peso kg','Sf.♻️','Sf.🗑','Costo']],body:rows});
+      y=doc.lastAutoTable.finalY+10;
+    }
+    // Totali
+    if(y>250){doc.addPage();y=20;}
+    doc.setFillColor(20,24,32);doc.rect(M,y-4,W-M*2,8,'F');
+    doc.setFontSize(10);doc.setFont('helvetica','bold');doc.setTextColor(249,115,22);doc.text('TOTALI ANNO '+anno,M+2,y+1);y+=12;
+    doc.setTextColor(30);doc.setFont('helvetica','normal');doc.setFontSize(9);
+    const totRows=[['Lavorazioni totali',String(totGlob.pezzi),''],['Peso prodotto',fmt(totGlob.peso,2),'kg'],['Sfrido riutilizzabile',fmt(totGlob.sfR,2),'kg'],['Sfrido perso',fmt(totGlob.sfP,2),'kg'],['Efficienza materiale',totGlob.peso+totGlob.sfP>0?fmt(totGlob.peso/(totGlob.peso+totGlob.sfP)*100,1)+'%':'N/D',''],['Costo materiale totale',fmtE(totGlob.costo),'']];
+    doc.autoTable({startY:y,margin:{left:M,right:M},headStyles:{fillColor:[30,30,30],textColor:255,fontSize:8},bodyStyles:{fontSize:9},head:[['Voce','Valore','UM']],body:totRows});
+    doc.save('MetalTrack_Report_'+anno+'.pdf');
+  }catch(e){alert('Errore PDF: '+e.message);}
+};
+
+// ═══ PDF STORICO SINGOLO ═══
+window.pdfStoricoSingolo=async function(id){
+  const s=storici.find(x=>x.id===id);if(!s)return;
+  try{
+    const jsPDF=await getJsPDF();
+    const doc=new jsPDF();const W=210,M=15;let y=20;
+    doc.setFontSize(18);doc.setFont('helvetica','bold');doc.setTextColor(249,115,22);doc.text('METALTRACK — Snapshot '+s.date,M,y);y+=10;
+    doc.setFontSize(10);doc.setTextColor(30);doc.setFont('helvetica','normal');
+    doc.text('Valore magazzino: '+fmtE(s.valoreMag),M,y);y+=6;
+    doc.text('Sfridi riutilizzabili: '+fmt(s.totSfUsato,3)+' kg',M,y);y+=6;
+    doc.text('Sfridi persi: '+fmt(s.totSfPerso,3)+' kg',M,y);y+=10;
+    const rows=s.magazzino.map(m=>[m.col||'',m.mat,m.tipo,fmt(m.peso,3),fmt(m.res,3),m.esa?'Esaurito':'OK']);
+    doc.autoTable({startY:y,margin:{left:M,right:M},headStyles:{fillColor:[249,115,22],textColor:255,fontSize:9},bodyStyles:{fontSize:9},head:[['Colata','Materiale','Tipo','Peso kg','Residuo kg','Stato']],body:rows});
+    doc.save('Snapshot_'+s.key+'.pdf');
+  }catch(e){alert('Errore PDF: '+e.message);}
+}
+
+// ═══ PDF GUIDA ═══
+window.pdfGuida=async function(){
+  try{
+    const jsPDF=await getJsPDF();
+    const doc=new jsPDF();const W=210,M=14;let y=20;
+    // Cover
+    doc.setFillColor(12,15,20);doc.rect(0,0,W,60,'F');
+    doc.setTextColor(249,115,22);doc.setFontSize(28);doc.setFont('helvetica','bold');doc.text('METALTRACK',M,30);
+    doc.setFontSize(12);doc.setTextColor(155,163,181);doc.text('Manuale Utente - Waste Manager v4.3.9',M,42);
+    doc.setFontSize(8);doc.setTextColor(107,115,133);doc.text('Generato il '+new Date().toLocaleDateString('it-IT'),M,54);
+    y=75;
+    const sections=[
+      {title:'1. Cos\'e MetalTrack',body:[
+        'MetalTrack e un gestionale web per officine metalmeccaniche. Monitora il magazzino lamiere/tondi, gli sfridi riutilizzabili, gli sfridi persi e tutte le lavorazioni eseguite per clienti.',
+        'E una Progressive Web App (PWA): installabile su PC, Android e iPhone direttamente dal browser, senza passare da store. Si apre come app nativa a schermo intero e funziona anche offline.',
+        'I dati sono salvati SIA in locale sul dispositivo (localStorage) SIA sul database cloud Appwrite. Questo garantisce: (1) velocita immediata, (2) sync automatico tra piu dispositivi, (3) backup automatico sempre disponibile.',
+        'Accesso protetto da DUE PIN distinti a 4 cifre: PIN di ACCESSO (login app) e PIN di ELIMINAZIONE (operazioni distruttive). Entrambi default 1234, da cambiare al primo utilizzo.'
+      ]},
+      {title:'2. Installazione PWA',body:[
+        'PC (Chrome/Edge): icona + nella barra indirizzi, poi "Installa MetalTrack".',
+        'Android (Chrome): menu tre puntini -> "Aggiungi alla schermata Home". Spesso compare un banner automatico.',
+        'iPhone/iPad (Safari): tasto Condividi -> "Aggiungi alla schermata Home".',
+        'Una volta installata, l\'app appare nella home del dispositivo con icona dedicata e si apre come app nativa.',
+        'Sync real-time via WebSocket: aprendo l\'app su piu dispositivi contemporaneamente, le modifiche fatte su uno si riflettono sugli altri in ~200ms senza ricaricare la pagina.'
+      ]},
+      {title:'3. Sistema di Sync e Pallino Connessione',body:[
+        'Il pallino colorato nella barra in alto indica in tempo reale lo stato del sync con il cloud.',
+        'Verde (SYNC): connesso, dati sincronizzati. Se pulsa brevemente = dato ricevuto da un altro dispositivo.',
+        'Giallo lampeggiante (SYNC...): salvataggio in corso sul cloud.',
+        'Grigio: offline, dati salvati solo in locale.',
+        'Giallo fisso (IN CODA): salvataggio in attesa, verra completato alla ripresa della connessione.',
+        'Il sync e completamente automatico. Non serve premere alcun "salva": ogni modifica viene propagata con debounce 800ms.'
+      ]},
+      {title:'4. Elenco Materiali',body:[
+        'Gestione centralizzata dei materiali con densita preimpostata. Dal dropdown "Materiale" in fase di aggiunta, si seleziona il tipo e densita e nome vengono compilati automaticamente.',
+        'Materiali standard precaricati: Acciaio (7850), Alluminio (2700), Rame (8900), Ottone (8500), Titanio (4500), Ghisa (7200) kg/m3.',
+        'Dal dropdown -> "Gestisci elenco materiali..." si apre la tabella di gestione: aggiungi, modifica, elimina materiali personalizzati.',
+        'La densita e sempre modificabile anche inline (si ricalcola il peso).',
+        'Opzione "Altro" per inserire un materiale non presente in lista (inserimento libero).'
+      ]},
+      {title:'5. Magazzino - Organizzazione in 3 sezioni',body:[
+        'Il Magazzino e diviso in tre sezioni chiare e separate:',
+        '- Lamiere Attive (pallino arancione): lamiere disponibili per lavorazioni, con conteggio e kg totali nell\'header.',
+        '- Tondi Attivi (pallino blu): tondi disponibili, stesso formato.',
+        '- Materiali Esauriti (card grigia collassabile, ▶/▼): contiene i materiali consumati. Non spariscono dallo storico, rimangono consultabili.',
+        'Per ogni materiale si inseriscono: N Colata, Partita (da bolla di scarico - IMPORTANTE per distinguere lamiere identiche), Materiale, Tipo, Dimensioni (mm), Densita, euro/kg, Data inserimento.',
+        'LAMIERA: L x W x Spessore. TONDO: Diametro Esterno x Lunghezza.',
+        'Il Peso viene calcolato automaticamente dalle dimensioni e densita. Il Residuo si aggiorna ad ogni lavorazione.',
+        'Quando Residuo = 0 -> materiale in "Materiali Esauriti" automaticamente.',
+        'Pulsante X (esaurisci manuale): cestina manualmente un materiale. Se il residuo era > 0, il peso residuo viene automaticamente contabilizzato come Sfrido Perso (appare sia in Sfridi Persi sia nel totale Sfrido perso della Dashboard).',
+        'Pulsante <- (ripristina): riapre un materiale esaurito. Se era stato cestinato con sfrido automatico, il record sfrido perso viene rimosso e il residuo torna intatto.',
+        'Snapshot: fotografia istantanea del magazzino. Utile per documentare stati specifici nel tempo.'
+      ]},
+      {title:'6. Campo PARTITA (novita v4.3.9)',body:[
+        'Il campo Partita serve a distinguere lamiere o tondi apparentemente identici ma provenienti da bolle di scarico diverse.',
+        'Esempio: ho due lamiere Ghisa 1500x1500x20 dalla stessa colata ma partite diverse -> inserisco Part:P-2024-07 e Part:P-2024-08.',
+        'Nel dropdown di nuova Lavorazione le lamiere appaiono con Col:COL-001 - Part:P-2024-07 cosi l\'operatore sa esattamente su quale lamiera sta lavorando.',
+        'La Partita e editabile anche inline nella tabella magazzino e nel registro Commesse.',
+        'Appare nel PDF Bolla, nell\'export CSV e ovunque sia necessario tracciare l\'origine specifica del materiale.'
+      ]},
+      {title:'7. Sfridi Riutilizzabili',body:[
+        'Pezzi di materiale recuperabile dopo le lavorazioni, disponibili per futuri tagli.',
+        '"+ Aggiungi Sfrido" apre il pannello di registrazione:',
+        'a) Provenienza: selezionare la lamiera/tondo di origine dal magazzino (densita e euro/kg ereditati) oppure inserimento manuale.',
+        'b) Forma: Lastra rettangolare (LxW), Disco pieno (Dest), Anello (Dest/Dint), Peso diretto (kg senza dimensioni).',
+        'Il peso viene calcolato automaticamente dalla forma + spessore + densita. Con Peso diretto si inseriscono direttamente i kg.',
+        'Gli sfridi disponibili appaiono nel selettore Lavorazione come opzione sorgente (con indicazione del peso residuo).'
+      ]},
+      {title:'8. Sfridi Persi',body:[
+        'Sfridi non riutilizzabili / cestinati. Tre modi per registrarli:',
+        '1) Durante una Lavorazione: flaggando "Sfrido generato" ma NON spuntando "riutilizzabile" - il peso viene scalato automaticamente.',
+        '2) Checkbox "Cestina tutto lo sfrido rimanente": compare quando lo sfrido non e riutilizzabile. Se spuntata, tutto il residuo della lamiera viene contabilizzato come perso e il materiale sorgente marcato esaurito automaticamente.',
+        '3) Esaurimento manuale dal Magazzino (X): se il residuo era > 0, viene auto-generato un record "Sfrido perso - Esaurimento manuale" visibile in Sfridi Persi e nella Dashboard.',
+        '4) Manualmente: da "Sfridi -> + Aggiungi Sfrido Perso". Richiede la scelta della lamiera/tondo sorgente e i kg.',
+        'Eliminazione: protetta da PIN di eliminazione. Il residuo del materiale viene ripristinato automaticamente.'
+      ]},
+      {title:'9. Nuova Lavorazione',body:[
+        '1) Scegliere materiale sorgente dal dropdown (lamiera, tondo, o sfrido riutilizzabile). Per distinguere lamiere identiche, controllare Col: e Part:.',
+        '2) Banner in alto mostra un badge chiaro con Col:XXX - Part:YYY del materiale selezionato.',
+        '3) Inserire Cliente e N Commessa.',
+        '4) Scegliere Forma del taglio: Rettangolo (Lato1 x Lato2) o Disco (Diametro esterno). Per tondi: Lunghezza pezzo.',
+        '5) Sezione Sfrido generato:',
+        '   - Spuntare "C\'e sfrido" se resta materiale.',
+        '   - Opzione "Sfrido riutilizzabile" (checkbox arancione) se torna in magazzino come Sfridi ricuperabili.',
+        '   - Se NON riutilizzabile: compare la checkbox rossa "Cestina tutto lo sfrido rimanente" (opzionale).',
+        '   - Dimensioni sfrido: Rettangolo, Disco, Anello, o Peso diretto (kg).',
+        '6) Riepilogo automatico: Peso lamiera tagliata, Sfrido generato, Sottratto dal magazzino, Residuo dopo, Costo cliente.',
+        'BLOCCO: registrazione impedita se il pezzo richiesto supera il residuo disponibile.'
+      ]},
+      {title:'10. Logica Matematica delle Lavorazioni',body:[
+        'Il cliente paga SEMPRE la lamiera tagliata intera (pp x euro/kg). Lo sfrido recuperato e un tuo margine aziendale.',
+        '',
+        'Caso SORGENTE = lamiera del magazzino:',
+        '- Sfrido riutilizzabile generato: sottratto dal magazzino = pp - psf (lo sfrido torna come entita Sfridi riutilizzabili).',
+        '- Sfrido perso o assente: sottratto dal magazzino = pp (tutta la lamiera tagliata esce).',
+        '- Cestina tutto: sottratto dal magazzino = intero residuo disponibile, materiale marcato esaurito.',
+        '',
+        'Caso SORGENTE = sfrido riutilizzabile esistente:',
+        '- Sottratto sempre = pp (il pezzo tagliato esce dallo sfrido origine).',
+        '- Eventuale sfrido riutilizzabile generato: salvato come NUOVO sfrido in lista (entita separata).',
+        '- Eventuale sfrido perso generato: contabilizzato come sfrido perso ma NON sottratto ulteriormente dallo sfrido origine.'
+      ]},
+      {title:'11. Commesse (Registro Lavorazioni)',body:[
+        'Registro di tutte le lavorazioni reali. Gli sfridi persi manuali NON compaiono qui (sono in Sfridi Persi).',
+        'v4.3.9: layout a card senza scroll orizzontale. Ogni lavorazione e una card con tutti i dati visibili su un\'unica schermata.',
+        'Ogni card mostra: Data, Cliente, Commessa, Materiale, Colata, Partita, Pezzo (descrittivo), Peso kg, Sfrido (kg e tipo), Sottratto, euro/kg, Costo pezzo, Costo cliente, Margine sfrido.',
+        'Tutti i campi sono editabili inline: modifica diretta nella card aggiorna i calcoli e ricalcola il magazzino.',
+        'PDF Bolla (tasto PDF): genera bolla di lavorazione con firma operatore e magazziniere.',
+        'CSV (tasto in alto): esporta tutte le lavorazioni in formato Excel-compatibile per backup.',
+        'Eliminazione lavorazione: richiede PIN di eliminazione. Ripristina automaticamente il residuo del magazzino e rimuove lo sfrido riutilizzabile generato (se non ancora consumato).'
+      ]},
+      {title:'12. Storico & Analisi',body:[
+        'Filtro periodo a pillole: Oggi | Questo mese | Quest\'anno.',
+        'KPI del periodo selezionato:',
+        '- Lavorazioni: numero di commesse nel periodo.',
+        '- Residuo magazzino (verde): kg totali ancora presenti in magazzino. Per periodi attuali e live.',
+        '- Peso prodotto: somma dei pesi dei pezzi prodotti.',
+        '- Sfrido perso: somma degli sfridi non recuperati (lavorazioni + esaurimenti manuali).',
+        '- Sfrido riutilizzabile: somma degli sfridi recuperati come Sfridi.',
+        '- Costo pezzi: somma dei costi pezzo totali.',
+        '- Efficienza materiale: Peso prodotto / (Peso prodotto + Sfrido perso) x 100%.',
+        '',
+        'Snapshot Mensili Magazzino: in fondo alla pagina, elenco di tutti i mesi con una foto del magazzino:',
+        '- Mese corrente (⚡): aggiornato live ad ogni modifica.',
+        '- Mesi passati (📸): chiusi automaticamente al passaggio al mese successivo. Il residuo diventa congelato e rimane consultabile per sempre.',
+        'Esempio: "Quanto materiale avevo a Maggio?" -> vai nello snapshot Maggio -> Residuo magazzino: 840 kg.',
+        'PDF singolo snapshot: stampa completa del mese specifico.',
+        'Report Annuale PDF: mese per mese con KPI e tabella riepilogativa.'
+      ]},
+      {title:'13. Doppio PIN',body:[
+        'PIN di ACCESSO (default 1234): richiesto al login dell\'app.',
+        'PIN di ELIMINAZIONE (default 1234): richiesto per cancellare commesse, sfridi, snapshot, righe magazzino.',
+        'Cambio PIN (menu -> "Cambia PIN"): appare una schermata di scelta con due grossi bottoni colorati:',
+        '- Bottone blu: PIN di ACCESSO.',
+        '- Bottone rosso: PIN di ELIMINAZIONE.',
+        'Cliccando si inserisce il PIN attuale di quel tipo, poi il nuovo, poi la conferma.',
+        'Ogni volta che l\'app chiede un PIN, appare sopra la tastiera una targhetta colorata che indica chiaramente quale PIN sta chiedendo (blu 🔑 accesso, rosso 🗑 eliminazione).',
+        'ATTENZIONE: se si dimenticano i PIN non sono recuperabili. Annotarli in un posto sicuro.'
+      ]},
+      {title:'14. Formule',body:[
+        'Lamiera (rettangolare): P = L x W x t / 10^9 x rho (kg)',
+        'Disco pieno: P = pi x (Dest/2)^2 x sp / 10^9 x rho (kg)',
+        'Tondo/Cilindro: P = pi x (D/2)^2 x h / 10^9 x rho (kg)',
+        'Anello: P = pi x ((Dest/2)^2 - (Dint/2)^2) x sp / 10^9 x rho (kg)',
+        '',
+        'Costo cliente = Peso lamiera tagliata x euro/kg (sempre)',
+        'Costo pezzo = Peso pezzo x euro/kg',
+        'Margine sfrido = Peso sfrido riutilizzabile x euro/kg',
+        '',
+        'Sfrido RIUTILIZZABILE da magazzino: sottratto = pp - psf',
+        'Sfrido PERSO da magazzino: sottratto = pp',
+        'Cestina tutto da magazzino: sottratto = residuo intero, sorgente esaurita',
+        'Lavorazione da sfrido esistente: sottratto = pp sempre',
+        '',
+        'Efficienza = Peso prodotto / (Peso prodotto + Sfrido perso) x 100%',
+        '',
+        'Densita comuni: Acciaio 7850 | Alluminio 2700 | Rame 8900 | Ottone 8500 | Titanio 4500 | Ghisa 7200 (kg/m3)'
+      ]},
+      {title:'15. Dati, Backup e Privacy',body:[
+        'Strategia a doppio livello: localStorage (browser, immediato) + Appwrite Cloud (remoto, con sync automatico debounce 800ms).',
+        'Real-time sync: modifiche da un dispositivo visibili sugli altri in ~200ms (WebSocket).',
+        'Anche pulendo la cache del browser, i dati restano sul cloud Appwrite e vengono riscaricati al riavvio.',
+        'Backup consigliato: esportare CSV dalla sezione Commesse almeno settimanalmente.',
+        'Migrazione automatica: dati da versioni precedenti vengono migrati al primo avvio senza interventi.',
+        'I dati sono criptati in transito (HTTPS) e archiviati sui server Appwrite Cloud in EU (Frankfurt).',
+        'Reinizializzare l\'app: cancellare i documenti dalle 6 collection Appwrite + localStorage.clear() nel browser.'
+      ]}
+    ];
+    sections.forEach((sec,si)=>{
+      if(y>240){doc.addPage();y=20;}
+      doc.setFillColor(249,115,22);doc.rect(M,y,W-M*2,7,'F');
+      doc.setFontSize(11);doc.setFont('helvetica','bold');doc.setTextColor(255);doc.text(sec.title,M+3,y+5);y+=11;
+      doc.setTextColor(40);doc.setFont('helvetica','normal');doc.setFontSize(9);
+      sec.body.forEach(line=>{
+        const lines=doc.splitTextToSize(line,W-M*2);
+        lines.forEach(l=>{if(y>280){doc.addPage();y=20;}doc.text(l,M,y);y+=5;});
+      });
+      y+=6;
+    });
+    doc.setFontSize(7);doc.setTextColor(160);
+    for(let i=2;i<=doc.getNumberOfPages();i++){
+      doc.setPage(i);doc.text('MetalTrack v4.3.9 - Guida Utente',W/2,290,{align:'center'});
+      doc.text('Pag.'+(i-1)+'/'+(doc.getNumberOfPages()-1),W-M,290,{align:'right'});
+    }
+    doc.save('MetalTrack_Guida.pdf');
+  }catch(e){alert('Errore PDF: '+e.message);}
+};
+
+// ═══ CSV ═══
+window.expCSV=function(){
+  const lavReali=lav.filter(l=>!l._sfPersoManuale&&!l.manuale);
+  if(!lavReali.length)return;
+  let c='Data,Cliente,Commessa,Materiale,Colata,Partita,Pezzo,Peso_pezzo_kg,Sfrido_kg,Tipo_sfrido,Sottratto_kg,EuroKg,Costo_EUR,Costo_cliente_EUR\n';
+  lavReali.forEach(l=>{
+    // v4.3.9: costo cliente = peso lamiera tagliata × €/kg
+    const cc=+((l.pp||0)*(l.ckg||0)).toFixed(2);
+    c+=`${l.date},${l.cli},${l.com},${l.mat},${l.col||''},${l.part||''},"${l.pdesc}",${fmt(l.pp,3)},${fmt(l.psf||0,3)},${l.sf?(l.sfu?'Riutilizzabile':'Perso'):'—'},${fmt(l.psot,3)},${fmt(l.ckg,2)},${fmt(l.ctot,2)},${fmt(cc,2)}\n`;
+  });
+  const b=new Blob([c],{type:'text/csv'});const a=document.createElement('a');
+  a.href=URL.createObjectURL(b);a.download='metaltrack_'+new Date().toISOString().slice(0,10)+'.csv';a.click();
+}
+
+// ═══ KEYBOARD ═══
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'&&S.modal){S.modal=null;render();return;}
+  const k=e.key;
+  if(/^[0-9]$/.test(k)||k==='Backspace'){
+    const dig=k==='Backspace'?'⌫':k;
+    if(!appUnlocked){loginKey(dig);return;}
+    if(S.modal&&S.modal.type==='changepin'){cpKey(dig);return;}
+    if(S.modal&&S.modal.type==='pin'){pinKey(dig);return;}
+  }
+});
+
+// ═══ INIT ═══
+load();
+recalc();
+checkStorico();
+save(); // unico save() di init — include il sync Appwrite debounced
+awInit();
+if(!navigator.onLine){ connStatus='offline'; }
+awLoadAll().then(ok=>{
+  if(ok){ recalc(); checkStorico(); if(appUnlocked) render(); }
+}).catch(()=>{});
+showLogin();
+</script>
+</body>
+</html>
