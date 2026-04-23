@@ -9,49 +9,6 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MetalTrack">
 <meta name="mobile-web-app-capable" content="yes">
-<!-- v4.3.9: fix viewport per PWA installata con modalità schermo.
-     Evita che la PWA erediti lo stato "Desktop mode" del browser al momento dell'installazione. -->
-<script>
-// Fix aggressivo del viewport per risolvere il problema "desktop mode" persistente.
-// Controlla costantemente che la larghezza della pagina coincida con la larghezza
-// fisica del dispositivo. Se no, forza il ricaricamento del viewport.
-(function(){
-  function fixVp(){
-    try{
-      var vp = document.querySelector('meta[name=viewport]');
-      var content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, shrink-to-fit=no';
-      if(!vp){
-        vp = document.createElement('meta');
-        vp.setAttribute('name','viewport');
-        document.head.appendChild(vp);
-      }
-      // Forza sempre il contenuto corretto (nuovo valore forza il browser a ricalcolare)
-      vp.setAttribute('content', content);
-
-      // Diagnostic: se la larghezza del documento è > screen.width * 1.3 (ovvero
-      // la pagina viene renderizzata come se fosse desktop su un mobile), c'è un
-      // problema di desktop-mode. In tal caso, ri-iniettiamo un viewport fresco.
-      var docW = document.documentElement.clientWidth;
-      var screenW = window.screen.width;
-      if(docW > screenW * 1.3){
-        // Rimuovi e ricrea il meta viewport da capo
-        vp.parentNode.removeChild(vp);
-        var newVp = document.createElement('meta');
-        newVp.setAttribute('name','viewport');
-        newVp.setAttribute('content', content);
-        document.head.insertBefore(newVp, document.head.firstChild);
-      }
-    }catch(e){}
-  }
-  // Esegui subito, al DOMContentLoaded, e dopo 500ms (per catturare modalità desktop tardive)
-  fixVp();
-  document.addEventListener('DOMContentLoaded', fixVp);
-  window.addEventListener('load', function(){ fixVp(); setTimeout(fixVp, 500); });
-  // Anche al cambio di orientamento/resize
-  window.addEventListener('orientationchange', fixVp);
-  window.addEventListener('resize', function(){ setTimeout(fixVp, 100); });
-})();
-</script>
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="icon" type="image/png" href="icons/icon-192.png">
