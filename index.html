@@ -2155,6 +2155,7 @@ function rStorico(){
       <div style="display:flex;gap:6px;flex-wrap:wrap">
         <button class="btn btn-g btn-s" onclick="generaStorico()">📸 Aggiorna snapshot</button>
         <button class="btn btn-bl btn-s" onclick="pdfAnnuale()">📄 Report annuale PDF</button>
+        ${storici.length>0?`<button class="btn btn-d btn-s" onclick="svuotaStorico()" title="Cancella tutti gli snapshot mensili (richiede PIN)">🗑 Svuota storico</button>`:''}
       </div>
     </div>
 
@@ -2292,6 +2293,33 @@ window.delStorico=function(id){
   askPin('PIN per eliminare snapshot storico',()=>{
     const idx=storici.findIndex(s=>s.id===id);
     if(idx>=0){storici.splice(idx,1);save();render();}
+  });
+};
+
+// ═══ SVUOTA STORICO (v4.3.9+) ═══
+// Cancella TUTTI gli snapshot mensili. Protetta da: conferma iniziale + PIN eliminazione
+// + seconda conferma con conteggio. Serve una di queste azioni distruttive importanti.
+window.svuotaStorico=function(){
+  if(storici.length===0)return;
+  const nSnap=storici.length;
+  // Prima conferma: è un'operazione distruttiva, vale la pena avvisare subito
+  if(!confirm(
+    `⚠️ ATTENZIONE\n\n`+
+    `Stai per CANCELLARE tutti gli ${nSnap} snapshot mensili dello storico.\n\n`+
+    `Questa operazione:\n`+
+    `• Rimuove tutte le "fotografie" del magazzino mese per mese\n`+
+    `• NON tocca le lavorazioni correnti né il magazzino attuale\n`+
+    `• NON è reversibile (a meno che tu abbia un backup JSON)\n\n`+
+    `💡 Suggerimento: prima fai un "💾 Backup dati JSON" dalla Guida.\n\n`+
+    `Procedere?`
+  ))return;
+  // PIN di eliminazione
+  askPin('PIN di eliminazione per svuotare storico',()=>{
+    // Seconda conferma dopo il PIN (per sicurezza in più)
+    if(!confirm(`Confermi definitivamente la cancellazione di tutti gli ${nSnap} snapshot?`))return;
+    storici=[];
+    save();render();
+    setTimeout(()=>alert('✅ Storico svuotato. '+nSnap+' snapshot eliminati.'),150);
   });
 };
 
