@@ -435,6 +435,16 @@ let _saveTimer   = null;       // debounce timer
 let _rtUnsubscribe = null;     // funzione per chiudere la subscription realtime
 let _lastLocalWriteAt = 0;     // timestamp ultimo save() locale — anti-echo realtime
 const _RT_ECHO_WINDOW = 2500;  // ms: eventi realtime arrivati entro questo tempo dopo una scrittura locale sono ignorati (sono il nostro stesso update)
+// ═══ PROTEZIONI ANTI-PERDITA DATI v4.3.9+ ═══
+// Flag critico: si mette a true SOLO dopo che il caricamento iniziale da cloud è completato
+// con successo. Finché è false, awSaveAll() è DISABILITATO. Questo impedisce che,
+// se l'app si apre con dati locali vuoti e il cloud ha dati, il save() iniziale non
+// sovrascriva il cloud cancellando tutto.
+let _cloudLoadCompleted = false;
+// Backup automatico dell'ultimo stato "noto valido" — viene aggiornato solo quando
+// i dati hanno contenuto. Se l'utente prova a salvare mentre le variabili sono vuote,
+// sappiamo subito che è un bug e blocchiamo.
+let _lastKnownGoodSize = {mag:0, lav:0, sf:0, snaps:0, storici:0, mat:0};
 
 function awInit(){
   try{
@@ -576,6 +586,10 @@ async function awLoadAll(){
     if(rMat    !==null){ materiali= rMat;     localStorage.setItem('st4mat',JSON.stringify(materiali));}
     setConn('online');
     _pendingSave = false;
+    // ═══ PROTEZIONE: abilita i save solo DOPO un load riuscito e salva le "dimensioni valide" ═══
+    _cloudLoadCompleted = true;
+    _lastKnownGoodSize = {mag:mag.length, lav:lav.length, sf:sfRiutil.length, snaps:snaps.length, storici:storici.length, mat:materiali.length};
+    console.log('[PROTEZIONE] Cloud load completato. Sizes:', _lastKnownGoodSize);
     return true;
   }catch(e){
     console.warn('awLoadAll error', e);
@@ -592,6 +606,29 @@ function awSaveAll(){
       _pendingSave = true;
       setConn('pending');
       return;
+    }
+    // ═══ PROTEZIONE CRITICA #1: non salvare se il caricamento dal cloud non è completo ═══
+    // Se il cloud non è ancora stato letto, potremmo star salvando un'app vuota sopra
+    // dati reali del cloud. MAI. Aspettiamo il completamento di awLoadAll().
+    if(!_cloudLoadCompleted){
+      console.warn('[PROTEZIONE] Blocco save: caricamento cloud non ancora completato.');
+      _pendingSave = true;
+      setConn('pending');
+      return;
+    }
+    // ═══ PROTEZIONE CRITICA #2: non sovrascrivere dati non-vuoti con array vuoti ═══
+    // Se una delle variabili è vuota MA il backup precedente aveva contenuto, è segno
+    // di un bug / comportamento anomalo. Blocchiamo e avvisiamo.
+    const currentSizes = {mag:mag.length, lav:lav.length, sf:sfRiutil.length, snaps:snaps.length, storici:storici.length, mat:materiali.length};
+    for(const k of ['mag','lav','sf']){  // controlliamo solo i dati critici utente
+      if(currentSizes[k]===0 && _lastKnownGoodSize[k]>0){
+        console.error('[PROTEZIONE] BLOCCATO salvataggio che avrebbe svuotato '+k+' (aveva '+_lastKnownGoodSize[k]+' elementi, ora 0). Ricarico dal cloud.');
+        // Non salviamo. Invece ricarichiamo dal cloud per ripristinare lo stato.
+        setConn('syncing');
+        try{ await awLoadAll(); setConn('online'); }catch(e){ setConn('offline'); }
+        if(appUnlocked) render();
+        return;
+      }
     }
     setConn('syncing');
     _lastLocalWriteAt = Date.now();  // anti-echo: marcatore per ignorare il nostro stesso update realtime
@@ -610,6 +647,8 @@ function awSaveAll(){
       await Promise.all(writes);
       setConn('online');
       _pendingSave = false;
+      // Aggiorna il backup dei "good sizes" solo DOPO un save riuscito
+      _lastKnownGoodSize = {...currentSizes};
     }catch(e){
       console.warn('awSaveAll error', e);
       _pendingSave = true;
@@ -2263,6 +2302,9 @@ function rGuida(){
     <p class="g-p">MetalTrack è un gestionale per il monitoraggio di lamiere, tondi, sfridi e lavorazioni. I dati sono salvati <strong>sia in locale</strong> (browser) <strong>sia su database cloud</strong> (Appwrite). Il sync avviene automaticamente.</p>
     <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">
       <button class="btn btn-p" onclick="pdfGuida()">📄 Scarica Guida PDF</button>
+      <button class="btn btn-bl" onclick="backupJSON()" title="Scarica un file JSON con TUTTI i dati (backup completo)">💾 Backup dati JSON</button>
+      <button class="btn btn-gr" onclick="document.getElementById('restoreFile').click()" title="Ripristina dati da un file di backup JSON">📥 Ripristina backup</button>
+      <input type="file" id="restoreFile" accept=".json" style="display:none" onchange="restoreJSON(this)">
     </div>
     <div class="g-toc">
       ${[['📱','PWA & Installazione'],['🟢','Pallino Connessione'],['🧪','Elenco Materiali'],['📦','Magazzino'],['♻️','Sfridi'],['🗑','Sfridi Persi'],['⚙️','Lavorazione'],['📋','Commesse'],['📅','Storico'],['🔢','Formule'],['💾','Dati & Backup']].map(([ic,t])=>`<div class="g-toc-item">${ic} ${t}</div>`).join('')}
@@ -3050,6 +3092,78 @@ window.expCSV=function(){
   const b=new Blob([c],{type:'text/csv'});const a=document.createElement('a');
   a.href=URL.createObjectURL(b);a.download='metaltrack_'+new Date().toISOString().slice(0,10)+'.csv';a.click();
 }
+
+// ═══ BACKUP / RESTORE JSON (v4.3.9+) ═══
+// Scarica un file JSON con TUTTI i dati dell'app. Da conservare su drive/email/USB.
+// In caso di perdita dati, ripristinabile con restoreJSON().
+window.backupJSON=function(){
+  const backup={
+    version:'4.3.9',
+    timestamp:new Date().toISOString(),
+    date:new Date().toLocaleString('it-IT'),
+    mag:mag,
+    lav:lav,
+    sfRiutil:sfRiutil,
+    snaps:snaps,
+    storici:storici,
+    materiali:materiali,
+    appConfig:appConfig
+  };
+  const b=new Blob([JSON.stringify(backup,null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(b);
+  a.download='metaltrack_backup_'+new Date().toISOString().slice(0,19).replace(/[:]/g,'-')+'.json';
+  a.click();
+  setTimeout(()=>alert('✅ Backup scaricato!\n\nConserva il file JSON in un posto sicuro (Google Drive, Dropbox, email, USB).\nPotrai ripristinarlo in qualsiasi momento con "📥 Ripristina backup".'),200);
+};
+
+// Ripristino da file JSON. Mostra conferma con numero di elementi prima di sovrascrivere.
+window.restoreJSON=function(input){
+  const f=input.files&&input.files[0];
+  if(!f)return;
+  const reader=new FileReader();
+  reader.onload=function(e){
+    try{
+      const data=JSON.parse(e.target.result);
+      if(!data.mag||!Array.isArray(data.mag)){
+        alert('❌ File non valido: manca l\'array "mag" o non è un backup MetalTrack.');
+        input.value='';return;
+      }
+      const msg=`⚠️ ATTENZIONE: stai per SOVRASCRIVERE tutti i dati attuali con quelli del backup.\n\n`+
+        `Backup del: ${data.date||'data sconosciuta'}\n`+
+        `Versione: ${data.version||'sconosciuta'}\n\n`+
+        `Contenuto backup:\n`+
+        `• Magazzino: ${data.mag.length} materiali\n`+
+        `• Lavorazioni: ${(data.lav||[]).length}\n`+
+        `• Sfridi riutilizzabili: ${(data.sfRiutil||[]).length}\n`+
+        `• Snapshot: ${(data.snaps||[]).length}\n`+
+        `• Storici: ${(data.storici||[]).length}\n`+
+        `• Materiali: ${(data.materiali||[]).length}\n\n`+
+        `Stato attuale (verrà sostituito):\n`+
+        `• Magazzino: ${mag.length} | Lavorazioni: ${lav.length} | Sfridi: ${sfRiutil.length}\n\n`+
+        `Confermi il ripristino?`;
+      if(!confirm(msg)){input.value='';return;}
+      // Secondo confirm per sicurezza (è un'operazione distruttiva)
+      if(!confirm('Sei SICURO di voler procedere? Questa azione sovrascriverà anche il cloud Appwrite.')){input.value='';return;}
+      mag=data.mag;
+      lav=data.lav||[];
+      sfRiutil=data.sfRiutil||[];
+      snaps=data.snaps||[];
+      storici=data.storici||[];
+      if(data.materiali) materiali=data.materiali;
+      if(data.appConfig) appConfig=Object.assign(appConfig,data.appConfig);
+      // Rilascia le protezioni (dati appena caricati da utente)
+      _cloudLoadCompleted=true;
+      _lastKnownGoodSize={mag:mag.length,lav:lav.length,sf:sfRiutil.length,snaps:snaps.length,storici:storici.length,mat:materiali.length};
+      recalc();save();render();
+      setTimeout(()=>alert('✅ Backup ripristinato con successo!'),200);
+    }catch(err){
+      alert('❌ Errore nel ripristino: '+err.message);
+    }
+    input.value='';
+  };
+  reader.readAsText(f);
+};
 
 // ═══ KEYBOARD ═══
 document.addEventListener('keydown',e=>{
